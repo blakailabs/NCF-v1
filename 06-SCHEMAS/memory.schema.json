@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Memory Record",
+  "type": "object",
+  "required": ["memory_cid", "memory_uid", "memory_type", "memory_name", "retention_class", "status", "schema_version"],
+  "properties": {
+    "memory_cid": {"type": "string"},
+    "memory_uid": {"type": "string"},
+    "memory_type": {"type": "string", "enum": ["Working", "Operational", "Knowledge", "Decision", "Performance", "Institutional", "Constitutional"]},
+    "memory_name": {"type": "string"},
+    "owner_cid": {"type": "string"},
+    "source_cid": {"type": "string"},
+    "retention_class": {"type": "string", "enum": ["A", "B", "C", "D", "E"]},
+    "status": {"type": "string", "enum": ["Draft", "Active", "Superseded", "Archived", "Retired"]},
+    "version": {"type": "string"},
+    "created_at": {"type": "string"},
+    "updated_at": {"type": "string"},
+    "schema_version": {"type": "string"}
+  }
+}
