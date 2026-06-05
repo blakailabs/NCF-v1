@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Metric Record",
+  "type": "object",
+  "required": ["metric_cid", "target_cid", "metric_name", "metric_value", "timestamp"],
+  "properties": {
+    "metric_cid": {"type": "string"},
+    "target_cid": {"type": "string"},
+    "metric_name": {"type": "string"},
+    "metric_value": {},
+    "metric_unit": {"type": "string"},
+    "collection_window": {"type": "string"},
+    "timestamp": {"type": "string"}
+  }
+}
