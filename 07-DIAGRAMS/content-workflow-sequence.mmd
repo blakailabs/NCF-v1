@@ -1,0 +1,29 @@
+# Infinity Loop Content Workflow
+
+```mermaid
+flowchart LR
+    DateContext[Date Context]
+    Schedule[Schedule Discovery]
+    Brief[Brief Creation]
+    Video[Video Generation]
+    Monitor[Video Monitoring]
+    Asset[Asset Registration]
+    Metadata[Metadata Creation]
+    Thumbnail[Thumbnail Creation]
+    Approval[Approval Gate]
+    Publish[Publishing]
+    Metrics[Performance Collection]
+    Logging[Logging]
+
+    DateContext --> Schedule
+    Schedule --> Brief
+    Brief --> Video
+    Video --> Monitor
+    Monitor --> Asset
+    Asset --> Metadata
+    Metadata --> Thumbnail
+    Thumbnail --> Approval
+    Approval --> Publish
+    Publish --> Metrics
+    Metrics --> Logging
+```
