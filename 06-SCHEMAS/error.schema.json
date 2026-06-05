@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Error Record",
+  "type": "object",
+  "required": ["error_cid", "run_cid", "error_type", "timestamp"],
+  "properties": {
+    "error_cid": {"type": "string"},
+    "run_cid": {"type": "string"},
+    "workflow_cid": {"type": "string"},
+    "error_type": {"type": "string"},
+    "severity": {"type": "string"},
+    "retryable": {"type": "boolean"},
+    "message": {"type": "string"},
+    "resolution_status": {"type": "string"},
+    "timestamp": {"type": "string"}
+  }
+}
