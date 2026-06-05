@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Tool",
+  "type": "object",
+  "required": ["tool_cid","tool_name","authority_level","status"],
+  "properties": {
+    "tool_cid":{"type":"string"},
+    "tool_name":{"type":"string"},
+    "authority_level":{"type":"string","enum":["T1","T2","T3","T4","T5"]},
+    "provider":{"type":"string"},
+    "status":{"type":"string"}
+  }
+}
