@@ -1,0 +1,22 @@
+# Infinity Loop Workforce Hierarchy
+
+```mermaid
+flowchart TD
+    Human[Content Director]
+    Orchestrator[Content Orchestrator]
+
+    Human --> Orchestrator
+
+    Orchestrator --> DateAgent[Date Context Agent]
+    Orchestrator --> ScheduleAgent[Schedule Discovery Agent]
+    Orchestrator --> BriefAgent[Content Brief Agent]
+    Orchestrator --> VideoAgent[Video Generation Agent]
+    Orchestrator --> MonitorAgent[Video Monitoring Agent]
+    Orchestrator --> MetadataAgent[Metadata Agent]
+    Orchestrator --> ThumbnailAgent[Thumbnail Agent]
+    Orchestrator --> AssetAgent[Asset Management Agent]
+    Orchestrator --> PublishAgent[Publishing Agent]
+    Orchestrator --> AnalyticsAgent[Performance Agent]
+    Orchestrator --> ValidationAgent[Validation Agent]
+    Orchestrator --> LoggingAgent[Logging Agent]
+```
