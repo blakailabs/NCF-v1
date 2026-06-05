@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Run Record",
+  "type": "object",
+  "required": ["run_cid", "run_uid", "workflow_cid", "status", "started_at"],
+  "properties": {
+    "run_cid": {"type": "string"},
+    "run_uid": {"type": "string"},
+    "workflow_cid": {"type": "string"},
+    "initiating_agent_cid": {"type": "string"},
+    "status": {"type": "string"},
+    "risk_class": {"type": "string"},
+    "started_at": {"type": "string"},
+    "completed_at": {"type": "string"},
+    "error_count": {"type": "integer"}
+  }
+}
