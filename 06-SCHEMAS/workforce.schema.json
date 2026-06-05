@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Workforce",
+  "type": "object",
+  "required": ["workforce_cid","organization_cid","workforce_name","status"],
+  "properties": {
+    "workforce_cid":{"type":"string"},
+    "organization_cid":{"type":"string"},
+    "workforce_name":{"type":"string"},
+    "owner_cid":{"type":"string"},
+    "status":{"type":"string"}
+  }
+}
