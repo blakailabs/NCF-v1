@@ -1,0 +1,27 @@
+# NCF Trust Chain Diagram
+
+```mermaid
+flowchart TD
+    Constitution[NCF Constitution]
+    RegistryAuthority[Nexus Registry Authority]
+    CertificationAuthority[Certification Authority]
+    Namespace[Organization Namespace]
+    Organization[Organization]
+    Workforce[Workforce]
+    Agent[Agent]
+    Workflow[Workflow]
+    Run[Workflow Run]
+    Asset[Asset]
+    Metric[Metric]
+
+    Constitution --> RegistryAuthority
+    RegistryAuthority --> CertificationAuthority
+    RegistryAuthority --> Namespace
+    Namespace --> Organization
+    Organization --> Workforce
+    Workforce --> Agent
+    Agent --> Workflow
+    Workflow --> Run
+    Run --> Asset
+    Asset --> Metric
+```
