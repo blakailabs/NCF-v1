@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Approval Record",
+  "type": "object",
+  "required": ["approval_cid", "target_cid", "decision", "approver", "timestamp"],
+  "properties": {
+    "approval_cid": {"type": "string"},
+    "target_cid": {"type": "string"},
+    "decision": {"type": "string", "enum": ["Approved", "Denied", "Needs Revision"]},
+    "approver": {"type": "string"},
+    "reason": {"type": "string"},
+    "risk_class": {"type": "string"},
+    "timestamp": {"type": "string"}
+  }
+}
