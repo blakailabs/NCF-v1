@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Workflow",
+  "type": "object",
+  "required": ["workflow_cid", "workflow_uid", "workflow_name", "owner_agent_cid", "risk_class", "status"],
+  "properties": {
+    "workflow_cid": {"type": "string"},
+    "workflow_uid": {"type": "string"},
+    "workflow_name": {"type": "string"},
+    "owner_agent_cid": {"type": "string"},
+    "risk_class": {"type": "string", "enum": ["R0","R1","R2","R3","R4"]},
+    "inputs": {"type": "array"},
+    "outputs": {"type": "array"},
+    "states": {"type": "array"},
+    "status": {"type": "string"}
+  }
+}
