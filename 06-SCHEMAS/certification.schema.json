@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Certification Record",
+  "type": "object",
+  "required": ["certification_cid","target_cid","certification_level","status"],
+  "properties": {
+    "certification_cid":{"type":"string"},
+    "target_cid":{"type":"string"},
+    "certification_level":{"type":"string","enum":["Compatible","Compliant","Verified","Certified"]},
+    "issued_by":{"type":"string"},
+    "issued_at":{"type":"string"},
+    "status":{"type":"string"}
+  }
+}
