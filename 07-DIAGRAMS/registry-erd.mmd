@@ -1,0 +1,54 @@
+# NCF Registry ERD
+
+```mermaid
+erDiagram
+    ORGANIZATION ||--o{ WORKFORCE : owns
+    WORKFORCE ||--o{ AGENT : contains
+    WORKFORCE ||--o{ WORKFLOW : defines
+    AGENT ||--o{ RUN : initiates
+    WORKFLOW ||--o{ RUN : executes
+    RUN ||--o{ EVENT : records
+    RUN ||--o{ ERROR : captures
+    RUN ||--o{ ASSET : creates
+    RUN ||--o{ APPROVAL : requests
+    ASSET ||--o{ PUBLISH_RECORD : publishes
+    ASSET ||--o{ METRIC : measures
+    MEMORY ||--o{ AGENT : informs
+    TOOL ||--o{ TOOL_INVOCATION : executes
+    RUN ||--o{ TOOL_INVOCATION : authorizes
+
+    ORGANIZATION {
+        string organization_cid
+        string organization_code
+        string status
+    }
+    WORKFORCE {
+        string workforce_cid
+        string organization_cid
+        string status
+    }
+    AGENT {
+        string agent_cid
+        string workforce_cid
+        string authority_class
+        string status
+    }
+    WORKFLOW {
+        string workflow_cid
+        string owner_agent_cid
+        string risk_class
+        string status
+    }
+    RUN {
+        string run_cid
+        string workflow_cid
+        string initiating_agent_cid
+        string status
+    }
+    ASSET {
+        string asset_cid
+        string run_cid
+        string asset_type
+        string storage_url
+    }
+```
