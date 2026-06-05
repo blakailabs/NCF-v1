@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Organization",
+  "type": "object",
+  "required": ["organization_cid","organization_code","organization_name","status"],
+  "properties": {
+    "organization_cid":{"type":"string"},
+    "organization_code":{"type":"string"},
+    "organization_name":{"type":"string"},
+    "namespace_status":{"type":"string"},
+    "status":{"type":"string","enum":["Active","Suspended","Retired"]}
+  }
+}
