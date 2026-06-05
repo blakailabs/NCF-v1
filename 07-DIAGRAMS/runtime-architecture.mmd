@@ -1,0 +1,35 @@
+# NCF Runtime Architecture
+
+```mermaid
+flowchart TD
+    Human[Human Approver]
+    Orchestrator[Content Orchestrator]
+    Queue[Task Queue]
+    EventBus[Event Bus]
+    Agents[Agent Workers]
+    Memory[Memory Retrieval Service]
+    Validation[Validation Service]
+    Approval[Approval Service]
+    ToolRouter[Tool Router]
+    Registries[Registries]
+    Platforms[External Platforms]
+    Metrics[Metrics & Observability]
+
+    Human --> Approval
+    Orchestrator --> Queue
+    Queue --> Agents
+    Agents --> EventBus
+
+    Agents --> Memory
+    Agents --> Validation
+    Agents --> Approval
+    Agents --> ToolRouter
+
+    ToolRouter --> Platforms
+
+    Agents --> Registries
+    EventBus --> Registries
+
+    Registries --> Metrics
+    Platforms --> Metrics
+```
