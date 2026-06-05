@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Event Record",
+  "type": "object",
+  "required": ["event_cid", "run_cid", "event_type", "timestamp"],
+  "properties": {
+    "event_cid": {"type": "string"},
+    "run_cid": {"type": "string"},
+    "actor_cid": {"type": "string"},
+    "target_cid": {"type": "string"},
+    "event_type": {"type": "string"},
+    "severity": {"type": "string", "enum": ["INFO", "WARNING", "ERROR", "CRITICAL"]},
+    "message": {"type": "string"},
+    "timestamp": {"type": "string"},
+    "schema_version": {"type": "string"}
+  }
+}
