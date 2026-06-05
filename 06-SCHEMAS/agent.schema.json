@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ncf.dev/schemas/agent.schema.json",
+  "title": "NCF Agent",
+  "type": "object",
+  "required": ["agent_cid", "agent_uid", "agent_name", "agent_type", "authority_class", "risk_class", "mission", "status", "schema_version"],
+  "properties": {
+    "agent_cid": {"type": "string", "pattern": "^NCF-[A-Z0-9]{3,6}-AGT-[A-Z0-9-]+-(DEV|TEST|STAGE|PROD)-[0-9A-Z-]+$"},
+    "agent_uid": {"type": "string"},
+    "agent_name": {"type": "string"},
+    "agent_type": {"type": "string", "enum": ["Executive", "Department", "Specialist", "Workflow", "Utility", "Constitutional Utility"]},
+    "authority_class": {"type": "string", "enum": ["A1", "A2", "A3", "A4", "A5"]},
+    "risk_class": {"type": "string", "enum": ["R0", "R1", "R2", "R3", "R4"]},
+    "mission": {"type": "string"},
+    "primary_kpi": {"type": "string"},
+    "memory_profile": {"type": "array", "items": {"type": "object"}},
+    "tool_profile": {"type": "array", "items": {"type": "object"}},
+    "workflow_portfolio": {"type": "array", "items": {"type": "string"}},
+    "status": {"type": "string", "enum": ["Draft", "Testing", "Approved", "Active", "Suspended", "Retired"]},
+    "schema_version": {"type": "string"}
+  }
+}
