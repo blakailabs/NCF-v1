@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NCF Asset Record",
+  "type": "object",
+  "required": ["asset_cid", "asset_uid", "asset_type", "storage_url", "status"],
+  "properties": {
+    "asset_cid": {"type": "string"},
+    "asset_uid": {"type": "string"},
+    "asset_type": {"type": "string"},
+    "content_cid": {"type": "string"},
+    "run_cid": {"type": "string"},
+    "storage_url": {"type": "string"},
+    "checksum": {"type": "string"},
+    "status": {"type": "string"},
+    "created_at": {"type": "string"}
+  }
+}
