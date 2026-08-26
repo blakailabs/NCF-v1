@@ -1,0 +1,15 @@
+NCF Company OS extension — committed branch contents
+
+08-COMPANY-OS/README.md
+08-COMPANY-OS/SECURITY.md
+08-COMPANY-OS/INTEGRATION-WITH-NCF.md
+08-COMPANY-OS/01-RESEARCH/AI-NATIVE-COMPANY-OS-MARKET-AND-ARCHITECTURE.md
+08-COMPANY-OS/02-CFHS/CFHS-v0.1.md
+08-COMPANY-OS/03-KERNEL/COMPANY-KERNEL-v0.1.md
+08-COMPANY-OS/04-CDM/CDM-SPEC-v0.1.md
+08-COMPANY-OS/05-MACHINE-CONTRACT/README.md
+08-COMPANY-OS/05-MACHINE-CONTRACT/cdm-machine-contract-v0.1.tar.xz
+08-COMPANY-OS/06-KNOWLEDGE-BASE/COMPANY-OS-KNOWLEDGE-BASE.md
+08-COMPANY-OS/07-CONVERSATION/2026-08-26-company-os-research-transcript.md
+
+The machine-contract archive contains the complete validated source tree, including all JSON Schemas, connector specs, scan profiles, discovery questions, artifact requests, inference rules, mapping DSL/rules, validation rules, certification profiles/tests/fixtures, sample company.cdm.yaml, package manifest, requirements, validation script, and validation report.
