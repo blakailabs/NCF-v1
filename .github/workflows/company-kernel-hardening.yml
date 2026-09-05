@@ -1,0 +1,41 @@
+name: Company Kernel Hardening
+
+on:
+  push:
+    branches:
+      - feature/company-kernel-hardening-v0.2
+  pull_request:
+    paths:
+      - '08-COMPANY-OS/11-KERNEL-RUNTIME/**'
+      - '.github/workflows/company-kernel-hardening.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: 08-COMPANY-OS/11-KERNEL-RUNTIME
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile kernel
+        run: python -m compileall -q kernel tests examples
+      - name: Run kernel tests
+        run: PYTHONPATH=. python -m unittest discover -s tests -v
+      - name: Scan committed runtime for common secret patterns
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re,sys
+          pats=[re.compile(r'sk-[A-Za-z0-9_-]{20,}'),re.compile(r'gh[pousr]_[A-Za-z0-9]{20,}'),re.compile(r'AKIA[0-9A-Z]{16}'),re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')]
+          hits=[]
+          for p in Path('.').rglob('*'):
+              if p.is_file():
+                  text=p.read_text(errors='ignore')
+                  if any(x.search(text) for x in pats): hits.append(str(p))
+          if hits:
+              print('Potential secret patterns:',hits); sys.exit(1)
+          print('Secret pattern scan: PASS')
+          PY
