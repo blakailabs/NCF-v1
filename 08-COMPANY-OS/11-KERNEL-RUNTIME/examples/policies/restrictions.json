@@ -1,0 +1,22 @@
+{
+  "policies": [
+    {
+      "id": "deny-restricted-data-external",
+      "enabled": true,
+      "effect": "DENY",
+      "principal": "*",
+      "action": "http.get",
+      "resource": "/dev/http/readonly",
+      "conditions": {"classification_in": ["RESTRICTED"], "external": true}
+    },
+    {
+      "id": "elevate-high-refund",
+      "enabled": true,
+      "effect": "ELEVATION_REQUIRED",
+      "principal": "agent:*",
+      "action": "payments.refund",
+      "resource": "/dev/payments/*",
+      "conditions": {"amount_gt": 1000}
+    }
+  ]
+}
