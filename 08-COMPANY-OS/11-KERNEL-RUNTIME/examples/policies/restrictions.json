@@ -10,13 +10,13 @@
       "conditions": {"classification_in": ["RESTRICTED"], "external": true}
     },
     {
-      "id": "elevate-high-refund",
+      "id": "elevate-refund-over-100",
       "enabled": true,
       "effect": "ELEVATION_REQUIRED",
       "principal": "agent:*",
       "action": "payments.refund",
       "resource": "/dev/payments/*",
-      "conditions": {"amount_gt": 1000}
+      "conditions": {"amount_gt": 100}
     }
   ]
 }
