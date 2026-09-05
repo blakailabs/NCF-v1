@@ -28,6 +28,8 @@ class ResourceRequest:
 
 @dataclass(frozen=True)
 class ActionIntent:
+    """Immutable action intent. Raw arguments are not persisted in the envelope."""
+
     intent_id: str
     actor_id: str
     process_id: str
@@ -60,7 +62,7 @@ class ActionIntent:
         if side_effect_class not in {"S0", "S1", "S2", "S3"}:
             raise HardeningError("CFHS_INVALID_REQUEST", "Invalid side-effect class")
         if not replay_nonce or len(replay_nonce) < 8:
-            raise HardeningError("CFHS_INVALID_REQUEST", "Consequential action replay nonce is required")
+            raise HardeningError("CFHS_INVALID_REQUEST", "Action replay nonce is required")
         return cls(
             intent_id="intent_" + secrets.token_hex(12),
             actor_id=actor_id,
@@ -76,7 +78,8 @@ class ActionIntent:
             approval_request_id=approval_request_id,
         )
 
-    def envelope(self) -> dict[str, Any]:
+    def binding_envelope(self) -> dict[str, Any]:
+        """Stable digest material. Approval ID is linkage and intentionally excluded."""
         return {
             "intent_id": self.intent_id,
             "actor_id": self.actor_id,
@@ -89,12 +92,14 @@ class ActionIntent:
             "replay_nonce": self.replay_nonce,
             "evidence_refs": list(self.evidence_refs),
             "resource_requests": [{"pool_id": x.pool_id, "amount": x.amount} for x in self.resource_requests],
-            "approval_request_id": self.approval_request_id,
             "created_at": self.created_at,
         }
 
+    def envelope(self) -> dict[str, Any]:
+        return {**self.binding_envelope(), "approval_request_id": self.approval_request_id}
+
     def intent_digest(self) -> str:
-        return sha256_hex(self.envelope())
+        return sha256_hex(self.binding_envelope())
 
 
 class ReplayNonceRegistry:
@@ -126,7 +131,7 @@ class ReplayNonceRegistry:
                 if row["status"] == "COMMITTED":
                     self.conn.commit()
                     return {"status": "REPLAY_COMMITTED", "result_digest": row["result_digest"]}
-                raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", f"Replay nonce is already in terminal/in-flight state: {row['status']}")
+                raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", f"Replay nonce is already in state: {row['status']}")
             self.conn.execute(
                 "INSERT INTO action_replay_nonces(nonce,intent_digest,status,created_at,updated_at) VALUES(?,?,?,?,?)",
                 (nonce, intent_digest, "RESERVED", now, now),
@@ -164,7 +169,7 @@ class ReplayNonceRegistry:
 class ResourceReservationLedger:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        self.conn.execute(
+        self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS action_resource_pools(
                 pool_id TEXT PRIMARY KEY,
@@ -172,11 +177,7 @@ class ResourceReservationLedger:
                 used REAL NOT NULL DEFAULT 0,
                 reserved REAL NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL
-            )
-            """
-        )
-        self.conn.execute(
-            """
+            );
             CREATE TABLE IF NOT EXISTS action_resource_reservations(
                 reservation_id TEXT PRIMARY KEY,
                 intent_id TEXT NOT NULL,
@@ -185,91 +186,127 @@ class ResourceReservationLedger:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            )
+            );
             """
         )
         self.conn.commit()
 
-    def configure_pool(self, pool_id: str, hard_limit: float, used: float = 0) -> None:
-        if hard_limit < 0 or used < 0 or used > hard_limit:
+    def configure_pool(self, pool_id: str, hard_limit: float, used: float | None = None) -> None:
+        if hard_limit < 0 or (used is not None and used < 0):
             raise HardeningError("CFHS_INVALID_REQUEST", "Invalid resource pool limits")
-        now = utcnow().isoformat()
-        self.conn.execute(
-            """
-            INSERT INTO action_resource_pools(pool_id,hard_limit,used,reserved,updated_at)
-            VALUES(?,?,?,0,?)
-            ON CONFLICT(pool_id) DO UPDATE SET hard_limit=excluded.hard_limit,used=excluded.used,updated_at=excluded.updated_at
-            """,
-            (pool_id, float(hard_limit), float(used), now),
-        )
-        self.conn.commit()
-
-    def reserve(self, intent_id: str, request: ResourceRequest) -> dict[str, Any]:
-        if request.amount <= 0:
-            raise HardeningError("CFHS_INVALID_REQUEST", "Resource reservation amount must be positive")
-        rid = "resv_" + secrets.token_hex(10)
-        now = utcnow().isoformat()
         try:
             self.conn.execute("BEGIN IMMEDIATE")
-            pool = self.conn.execute("SELECT * FROM action_resource_pools WHERE pool_id=?", (request.pool_id,)).fetchone()
-            if not pool:
-                raise HardeningError("CFHS_NOT_FOUND", "Resource pool not found", {"pool_id": request.pool_id})
-            available = float(pool["hard_limit"]) - float(pool["used"]) - float(pool["reserved"])
-            if request.amount > available:
-                raise HardeningError(
-                    "CFHS_RESOURCE_EXHAUSTED",
-                    "Resource reservation would exceed hard limit",
-                    {"pool_id": request.pool_id, "requested": request.amount, "available": available},
+            current = self.conn.execute("SELECT * FROM action_resource_pools WHERE pool_id=?", (pool_id,)).fetchone()
+            if current:
+                new_used = float(current["used"] if used is None else used)
+                reserved = float(current["reserved"])
+                if new_used + reserved > float(hard_limit):
+                    raise HardeningError("CFHS_CONFLICT", "Pool limit cannot be set below used plus reserved resources")
+                self.conn.execute(
+                    "UPDATE action_resource_pools SET hard_limit=?,used=?,updated_at=? WHERE pool_id=?",
+                    (float(hard_limit), new_used, utcnow().isoformat(), pool_id),
                 )
-            self.conn.execute(
-                "UPDATE action_resource_pools SET reserved=reserved+?,updated_at=? WHERE pool_id=?",
-                (float(request.amount), now, request.pool_id),
-            )
-            self.conn.execute(
-                "INSERT INTO action_resource_reservations(reservation_id,intent_id,pool_id,amount,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
-                (rid, intent_id, request.pool_id, float(request.amount), "RESERVED", now, now),
-            )
-            self.conn.commit()
-            return {"reservation_id": rid, "pool_id": request.pool_id, "amount": request.amount, "status": "RESERVED"}
-        except Exception:
-            self.conn.rollback()
-            raise
-
-    def commit(self, reservation_id: str) -> None:
-        try:
-            self.conn.execute("BEGIN IMMEDIATE")
-            row = self.conn.execute("SELECT * FROM action_resource_reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
-            if not row or row["status"] != "RESERVED":
-                raise HardeningError("CFHS_CONFLICT", "Resource reservation is not commit-ready")
-            now = utcnow().isoformat()
-            self.conn.execute(
-                "UPDATE action_resource_pools SET reserved=reserved-?,used=used+?,updated_at=? WHERE pool_id=?",
-                (row["amount"], row["amount"], now, row["pool_id"]),
-            )
-            self.conn.execute(
-                "UPDATE action_resource_reservations SET status='COMMITTED',updated_at=? WHERE reservation_id=?",
-                (now, reservation_id),
-            )
+            else:
+                new_used = float(used or 0)
+                if new_used > float(hard_limit):
+                    raise HardeningError("CFHS_INVALID_REQUEST", "Used resources exceed hard limit")
+                self.conn.execute(
+                    "INSERT INTO action_resource_pools(pool_id,hard_limit,used,reserved,updated_at) VALUES(?,?,?,0,?)",
+                    (pool_id, float(hard_limit), new_used, utcnow().isoformat()),
+                )
             self.conn.commit()
         except Exception:
             self.conn.rollback()
             raise
 
-    def release(self, reservation_id: str) -> None:
+    def reserve_many(self, intent_id: str, requests: tuple[ResourceRequest, ...] | list[ResourceRequest]) -> list[dict[str, Any]]:
+        requests = list(requests)
+        if not requests:
+            return []
+        totals: dict[str, float] = {}
+        for request in requests:
+            if request.amount <= 0:
+                raise HardeningError("CFHS_INVALID_REQUEST", "Resource reservation amount must be positive")
+            totals[request.pool_id] = totals.get(request.pool_id, 0.0) + float(request.amount)
+        now = utcnow().isoformat()
+        created: list[dict[str, Any]] = []
         try:
             self.conn.execute("BEGIN IMMEDIATE")
-            row = self.conn.execute("SELECT * FROM action_resource_reservations WHERE reservation_id=?", (reservation_id,)).fetchone()
-            if not row or row["status"] != "RESERVED":
-                raise HardeningError("CFHS_CONFLICT", "Resource reservation is not releasable")
+            for pool_id, amount in totals.items():
+                pool = self.conn.execute("SELECT * FROM action_resource_pools WHERE pool_id=?", (pool_id,)).fetchone()
+                if not pool:
+                    raise HardeningError("CFHS_NOT_FOUND", "Resource pool not found", {"pool_id": pool_id})
+                available = float(pool["hard_limit"]) - float(pool["used"]) - float(pool["reserved"])
+                if amount > available:
+                    raise HardeningError(
+                        "CFHS_RESOURCE_EXHAUSTED",
+                        "Resource reservation would exceed hard limit",
+                        {"pool_id": pool_id, "requested": amount, "available": available},
+                    )
+            for pool_id, amount in totals.items():
+                self.conn.execute(
+                    "UPDATE action_resource_pools SET reserved=reserved+?,updated_at=? WHERE pool_id=?",
+                    (amount, now, pool_id),
+                )
+            for request in requests:
+                rid = "resv_" + secrets.token_hex(10)
+                self.conn.execute(
+                    "INSERT INTO action_resource_reservations(reservation_id,intent_id,pool_id,amount,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                    (rid, intent_id, request.pool_id, float(request.amount), "RESERVED", now, now),
+                )
+                created.append({"reservation_id": rid, "pool_id": request.pool_id, "amount": float(request.amount), "status": "RESERVED"})
+            self.conn.commit()
+            return created
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def commit_many(self, reservation_ids: list[str]) -> None:
+        if not reservation_ids:
+            return
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            rows = []
+            for rid in reservation_ids:
+                row = self.conn.execute("SELECT * FROM action_resource_reservations WHERE reservation_id=?", (rid,)).fetchone()
+                if not row or row["status"] != "RESERVED":
+                    raise HardeningError("CFHS_CONFLICT", "Resource reservation is not commit-ready", {"reservation_id": rid})
+                rows.append(row)
+            totals: dict[str, float] = {}
+            for row in rows:
+                totals[row["pool_id"]] = totals.get(row["pool_id"], 0.0) + float(row["amount"])
             now = utcnow().isoformat()
-            self.conn.execute(
-                "UPDATE action_resource_pools SET reserved=reserved-?,updated_at=? WHERE pool_id=?",
-                (row["amount"], now, row["pool_id"]),
-            )
-            self.conn.execute(
-                "UPDATE action_resource_reservations SET status='RELEASED',updated_at=? WHERE reservation_id=?",
-                (now, reservation_id),
-            )
+            for pool_id, amount in totals.items():
+                self.conn.execute(
+                    "UPDATE action_resource_pools SET reserved=reserved-?,used=used+?,updated_at=? WHERE pool_id=?",
+                    (amount, amount, now, pool_id),
+                )
+            for rid in reservation_ids:
+                self.conn.execute("UPDATE action_resource_reservations SET status='COMMITTED',updated_at=? WHERE reservation_id=?", (now, rid))
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def release_many(self, reservation_ids: list[str]) -> None:
+        if not reservation_ids:
+            return
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            rows = []
+            for rid in reservation_ids:
+                row = self.conn.execute("SELECT * FROM action_resource_reservations WHERE reservation_id=?", (rid,)).fetchone()
+                if not row or row["status"] != "RESERVED":
+                    raise HardeningError("CFHS_CONFLICT", "Resource reservation is not releasable", {"reservation_id": rid})
+                rows.append(row)
+            totals: dict[str, float] = {}
+            for row in rows:
+                totals[row["pool_id"]] = totals.get(row["pool_id"], 0.0) + float(row["amount"])
+            now = utcnow().isoformat()
+            for pool_id, amount in totals.items():
+                self.conn.execute("UPDATE action_resource_pools SET reserved=reserved-?,updated_at=? WHERE pool_id=?", (amount, now, pool_id))
+            for rid in reservation_ids:
+                self.conn.execute("UPDATE action_resource_reservations SET status='RELEASED',updated_at=? WHERE reservation_id=?", (now, rid))
             self.conn.commit()
         except Exception:
             self.conn.rollback()
@@ -285,7 +322,7 @@ class ResourceReservationLedger:
 class MultiPartyApprovalLedger:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        self.conn.execute(
+        self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS action_approval_requests(
                 request_id TEXT PRIMARY KEY,
@@ -295,17 +332,13 @@ class MultiPartyApprovalLedger:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
-            )
-            """
-        )
-        self.conn.execute(
-            """
+            );
             CREATE TABLE IF NOT EXISTS action_approvals(
                 request_id TEXT NOT NULL,
                 approver_id TEXT NOT NULL,
                 approved_at TEXT NOT NULL,
                 PRIMARY KEY(request_id,approver_id)
-            )
+            );
             """
         )
         self.conn.commit()
@@ -331,6 +364,7 @@ class MultiPartyApprovalLedger:
                 raise HardeningError("CFHS_NOT_FOUND", "Approval request is not active")
             if datetime.fromisoformat(request["expires_at"]) <= utcnow():
                 self.conn.execute("UPDATE action_approval_requests SET status='EXPIRED' WHERE request_id=?", (request_id,))
+                self.conn.commit()
                 raise HardeningError("CFHS_ELEVATION_REQUIRED", "Approval request expired")
             if approver_id == request["requester_id"]:
                 raise HardeningError("CFHS_POLICY_DENIED", "Requester cannot approve its own multi-party request")
@@ -338,11 +372,11 @@ class MultiPartyApprovalLedger:
                 "INSERT OR IGNORE INTO action_approvals(request_id,approver_id,approved_at) VALUES(?,?,?)",
                 (request_id, approver_id, utcnow().isoformat()),
             )
-            count = self.conn.execute("SELECT COUNT(*) AS n FROM action_approvals WHERE request_id=?", (request_id,)).fetchone()["n"]
-            status = "APPROVED" if int(count) >= int(request["required_count"]) else "PENDING"
+            count = int(self.conn.execute("SELECT COUNT(*) AS n FROM action_approvals WHERE request_id=?", (request_id,)).fetchone()["n"])
+            status = "APPROVED" if count >= int(request["required_count"]) else "PENDING"
             self.conn.execute("UPDATE action_approval_requests SET status=? WHERE request_id=?", (status, request_id))
             self.conn.commit()
-            return {"request_id": request_id, "status": status, "approval_count": int(count), "required_count": int(request["required_count"])}
+            return {"request_id": request_id, "status": status, "approval_count": count, "required_count": int(request["required_count"])}
         except Exception:
             self.conn.rollback()
             raise
@@ -376,8 +410,11 @@ class CompensationRegistry:
         self.conn.commit()
 
     def declare(self, intent_id: str, compensation_action: str, compensation_resource: str) -> dict[str, Any]:
+        existing = self.conn.execute("SELECT status FROM action_compensation_plans WHERE intent_id=?", (intent_id,)).fetchone()
+        if existing:
+            raise HardeningError("CFHS_CONFLICT", "Compensation plan already exists for this intent")
         self.conn.execute(
-            "INSERT OR REPLACE INTO action_compensation_plans(intent_id,compensation_action,compensation_resource,status,declared_at) VALUES(?,?,?,?,?)",
+            "INSERT INTO action_compensation_plans(intent_id,compensation_action,compensation_resource,status,declared_at) VALUES(?,?,?,?,?)",
             (intent_id, compensation_action, compensation_resource, "DECLARED", utcnow().isoformat()),
         )
         self.conn.commit()
@@ -457,39 +494,31 @@ class SQLiteActionAuditSink:
 
 
 class ConsequentialActionCoordinator:
-    """Reference two-boundary coordinator for consequential device actions.
+    """Reference coordinator around one potentially consequential external call."""
 
-    This does not make an external side effect and a SQLite commit globally atomic.
-    Instead it makes partial failure explicit, reserves resources before execution,
-    requires pre-action audit durability, and records UNKNOWN_SIDE_EFFECT when the
-    external action may have happened but local commit cannot be proven.
-    """
-
-    def __init__(
-        self,
-        replay: ReplayNonceRegistry,
-        resources: ResourceReservationLedger,
-        approvals: MultiPartyApprovalLedger,
-        compensation: CompensationRegistry,
-        audit: ActionAuditSink,
-    ):
+    def __init__(self, replay: ReplayNonceRegistry, resources: ResourceReservationLedger, approvals: MultiPartyApprovalLedger, compensation: CompensationRegistry, audit: ActionAuditSink):
         self.replay = replay
         self.resources = resources
         self.approvals = approvals
         self.compensation = compensation
         self.audit = audit
 
-    def execute(
-        self,
-        intent: ActionIntent,
-        arguments: dict[str, Any],
-        authorize: Callable[[ActionIntent, dict[str, Any]], dict[str, Any]],
-        invoke: Callable[[dict[str, Any]], Any],
-        compensate: Callable[[dict[str, Any], Exception | None], Any] | None = None,
-    ) -> dict[str, Any]:
-        if digest(arguments) != intent.arguments_digest:
-            raise HardeningError("CFHS_CONFLICT", "Action arguments differ from signed intent envelope")
+    def _compensate(self, intent: ActionIntent, arguments: dict[str, Any], cause: Exception, compensate: Callable | None) -> bool:
+        if intent.side_effect_class not in {"S1", "S2"} or compensate is None:
+            return False
+        try:
+            result = compensate(arguments, cause)
+            if intent.side_effect_class == "S2":
+                self.compensation.complete(intent.intent_id, result)
+            return True
+        except Exception as comp_exc:
+            if intent.side_effect_class == "S2":
+                self.compensation.fail(intent.intent_id, {"error": str(comp_exc)})
+            raise HardeningError("CFHS_COMPENSATION_FAILED", "Compensation failed", {"error": str(comp_exc)}) from comp_exc
 
+    def execute(self, intent: ActionIntent, arguments: dict[str, Any], authorize: Callable[[ActionIntent, dict[str, Any]], dict[str, Any]], invoke: Callable[[dict[str, Any]], Any], compensate: Callable[[dict[str, Any], Exception | None], Any] | None = None) -> dict[str, Any]:
+        if digest(arguments) != intent.arguments_digest:
+            raise HardeningError("CFHS_CONFLICT", "Action arguments differ from intent")
         decision = authorize(intent, arguments)
         if decision.get("decision") != "ALLOW":
             code = "CFHS_ELEVATION_REQUIRED" if decision.get("decision") == "ELEVATION_REQUIRED" else "CFHS_POLICY_DENIED"
@@ -500,6 +529,8 @@ class ConsequentialActionCoordinator:
             self.approvals.require_satisfied(intent.approval_request_id, intent_digest)
         if intent.side_effect_class == "S2":
             self.compensation.require_declared(intent.intent_id)
+        if intent.side_effect_class in {"S1", "S2"} and compensate is None:
+            raise HardeningError("CFHS_POLICY_DENIED", "Reversible/compensatable action requires a compensation callback")
 
         replay_state = self.replay.reserve(intent.replay_nonce, intent_digest)
         if replay_state["status"] == "REPLAY_COMMITTED":
@@ -507,69 +538,65 @@ class ConsequentialActionCoordinator:
 
         reservations: list[str] = []
         audit_id: str | None = None
-        invoked = False
+        invoke_attempted = False
         try:
-            for request in intent.resource_requests:
-                reservations.append(self.resources.reserve(intent.intent_id, request)["reservation_id"])
+            reservations = [x["reservation_id"] for x in self.resources.reserve_many(intent.intent_id, intent.resource_requests)]
+            audit_id = self.audit.prepare(intent)  # fail closed before device call
+            invoke_attempted = True
+            try:
+                result = invoke(arguments)
+            except Exception as invoke_exc:
+                compensated = self._compensate(intent, arguments, invoke_exc, compensate)
+                if audit_id:
+                    self.audit.fail(audit_id, "CFHS_DEVICE_FAILED", {"error": str(invoke_exc), "compensated": compensated})
+                if compensated or intent.side_effect_class == "S0":
+                    self.resources.release_many(reservations)
+                    self.replay.fail(intent.replay_nonce, "CFHS_DEVICE_FAILED", unknown_side_effect=False)
+                    raise HardeningError("CFHS_DEVICE_FAILED", "Device invocation failed; side effects were absent or compensated") from invoke_exc
+                self.resources.commit_many(reservations)  # conservative accounting: effect may have occurred
+                self.replay.fail(intent.replay_nonce, "CFHS_UNKNOWN_SIDE_EFFECT", unknown_side_effect=True)
+                raise HardeningError("CFHS_UNKNOWN_SIDE_EFFECT", "Device invocation failed after execution began; side-effect state is unknown") from invoke_exc
 
-            # Fail closed before the external side effect if audit preparation is unavailable.
-            audit_id = self.audit.prepare(intent)
-            result = invoke(arguments)
-            invoked = True
             result_digest = digest(result)
-
             try:
                 self.audit.commit(audit_id, result_digest)
             except Exception as audit_exc:
-                for rid in reservations:
-                    try:
-                        self.resources.commit(rid)
-                    except Exception:
-                        pass
-                try:
-                    self.replay.fail(intent.replay_nonce, "CFHS_AUDIT_COMMIT_FAILED", unknown_side_effect=True)
-                except Exception:
-                    pass
-                if intent.side_effect_class in {"S1", "S2"} and compensate is not None:
-                    try:
-                        comp_result = compensate(arguments, audit_exc)
-                        if intent.side_effect_class == "S2":
-                            self.compensation.complete(intent.intent_id, comp_result)
-                    except Exception as comp_exc:
-                        if intent.side_effect_class == "S2":
-                            self.compensation.fail(intent.intent_id, {"error": str(comp_exc)})
-                        raise HardeningError("CFHS_COMPENSATION_FAILED", "Audit commit failed and compensation also failed") from comp_exc
-                raise HardeningError("CFHS_AUDIT_COMMIT_FAILED", "External action may have succeeded but audit commit failed") from audit_exc
+                compensated = self._compensate(intent, arguments, audit_exc, compensate)
+                if compensated:
+                    self.resources.release_many(reservations)
+                    self.replay.fail(intent.replay_nonce, "CFHS_AUDIT_COMMIT_FAILED", unknown_side_effect=False)
+                    raise HardeningError("CFHS_AUDIT_COMMIT_FAILED", "Action was compensated because audit commit failed") from audit_exc
+                self.resources.commit_many(reservations)
+                self.replay.fail(intent.replay_nonce, "CFHS_AUDIT_COMMIT_FAILED", unknown_side_effect=True)
+                raise HardeningError("CFHS_UNKNOWN_SIDE_EFFECT", "Action succeeded but audit commit failed; reconciliation required") from audit_exc
 
-            for rid in reservations:
-                self.resources.commit(rid)
+            try:
+                self.resources.commit_many(reservations)
+            except Exception as resource_exc:
+                self.replay.fail(intent.replay_nonce, "CFHS_RESOURCE_COMMIT_FAILED", unknown_side_effect=True)
+                raise HardeningError("CFHS_RESOURCE_COMMIT_FAILED", "Action and audit committed but resource accounting failed") from resource_exc
+
             self.replay.commit(intent.replay_nonce, result_digest)
             return {"status": "COMMITTED", "intent_id": intent.intent_id, "audit_id": audit_id, "result": result, "result_digest": result_digest}
 
         except HardeningError:
+            # If failure happened before invocation and safety state is still reserved,
+            # clean it up without converting the original safety decision to a device error.
+            if not invoke_attempted:
+                if audit_id:
+                    try:
+                        self.audit.fail(audit_id, "CFHS_PREEXECUTION_FAILED")
+                    except Exception:
+                        pass
+                if reservations:
+                    try:
+                        self.resources.release_many(reservations)
+                    except Exception:
+                        pass
+                state = self.replay.get(intent.replay_nonce)
+                if state and state["status"] == "RESERVED":
+                    try:
+                        self.replay.fail(intent.replay_nonce, "CFHS_PREEXECUTION_FAILED", unknown_side_effect=False)
+                    except Exception:
+                        pass
             raise
-        except Exception as exc:
-            if audit_id:
-                try:
-                    self.audit.fail(audit_id, "CFHS_DEVICE_FAILED", {"error": str(exc), "invoked": invoked})
-                except Exception:
-                    pass
-            for rid in reservations:
-                try:
-                    self.resources.release(rid)
-                except Exception:
-                    pass
-            try:
-                self.replay.fail(intent.replay_nonce, "CFHS_DEVICE_FAILED", unknown_side_effect=invoked)
-            except Exception:
-                pass
-            if intent.side_effect_class in {"S1", "S2"} and invoked and compensate is not None:
-                try:
-                    comp_result = compensate(arguments, exc)
-                    if intent.side_effect_class == "S2":
-                        self.compensation.complete(intent.intent_id, comp_result)
-                except Exception as comp_exc:
-                    if intent.side_effect_class == "S2":
-                        self.compensation.fail(intent.intent_id, {"error": str(comp_exc)})
-                    raise HardeningError("CFHS_COMPENSATION_FAILED", "Action failed and compensation failed") from comp_exc
-            raise HardeningError("CFHS_DEVICE_FAILED", "Consequential action failed", {"error": str(exc), "invoked": invoked}) from exc
