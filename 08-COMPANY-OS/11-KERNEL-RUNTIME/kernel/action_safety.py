@@ -86,11 +86,7 @@ class ActionIntent:
         return replace(self, approval_request_id=request_id)
 
     def binding_envelope(self) -> dict[str, Any]:
-        """Stable semantic binding used by approvals and replay protection.
-
-        Ephemeral intent_id, created_at, and approval_request_id are excluded so a
-        retry of the same semantic request with the same nonce can be recognized.
-        """
+        """Stable semantic binding used by approval, replay and compensation."""
         return {
             "actor_id": self.actor_id,
             "process_id": self.process_id,
@@ -134,6 +130,16 @@ class ReplayNonceRegistry:
             """
         )
         self.conn.commit()
+
+    def check(self, nonce: str, intent_digest: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM action_replay_nonces WHERE nonce=?", (nonce,)).fetchone()
+        if not row:
+            return {"status": "NEW"}
+        if row["intent_digest"] != intent_digest:
+            raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", "Replay nonce was already used for a different semantic action")
+        if row["status"] == "COMMITTED":
+            return {"status": "REPLAY_COMMITTED", "result_digest": row["result_digest"]}
+        raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", f"Replay nonce is already in state: {row['status']}")
 
     def reserve(self, nonce: str, intent_digest: str) -> dict[str, Any]:
         now = utcnow().isoformat()
@@ -340,14 +346,7 @@ class MultiPartyApprovalLedger:
         )
         self.conn.commit()
 
-    def create(
-        self,
-        intent_digest: str,
-        requester_id: str,
-        required_count: int = 2,
-        ttl_seconds: int = 900,
-        eligible_approvers: list[str] | None = None,
-    ) -> dict[str, Any]:
+    def create(self, intent_digest: str, requester_id: str, required_count: int = 2, ttl_seconds: int = 900, eligible_approvers: list[str] | None = None) -> dict[str, Any]:
         eligible = sorted(set(eligible_approvers or []))
         if required_count < 1:
             raise HardeningError("CFHS_INVALID_REQUEST", "At least one approval must be required")
@@ -408,7 +407,7 @@ class CompensationRegistry:
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS action_compensation_plans(
-                intent_id TEXT PRIMARY KEY,
+                intent_digest TEXT PRIMARY KEY,
                 compensation_action TEXT NOT NULL,
                 compensation_resource TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -420,28 +419,28 @@ class CompensationRegistry:
         )
         self.conn.commit()
 
-    def declare(self, intent_id: str, compensation_action: str, compensation_resource: str) -> dict[str, Any]:
-        if self.conn.execute("SELECT 1 FROM action_compensation_plans WHERE intent_id=?", (intent_id,)).fetchone():
-            raise HardeningError("CFHS_CONFLICT", "Compensation plan already exists for this intent")
+    def declare(self, intent_digest: str, compensation_action: str, compensation_resource: str) -> dict[str, Any]:
+        if self.conn.execute("SELECT 1 FROM action_compensation_plans WHERE intent_digest=?", (intent_digest,)).fetchone():
+            raise HardeningError("CFHS_CONFLICT", "Compensation plan already exists for this semantic intent")
         self.conn.execute(
-            "INSERT INTO action_compensation_plans(intent_id,compensation_action,compensation_resource,status,declared_at) VALUES(?,?,?,?,?)",
-            (intent_id, compensation_action, compensation_resource, "DECLARED", utcnow().isoformat()),
+            "INSERT INTO action_compensation_plans(intent_digest,compensation_action,compensation_resource,status,declared_at) VALUES(?,?,?,?,?)",
+            (intent_digest, compensation_action, compensation_resource, "DECLARED", utcnow().isoformat()),
         )
         self.conn.commit()
-        return {"intent_id": intent_id, "status": "DECLARED", "compensation_action": compensation_action, "compensation_resource": compensation_resource}
+        return {"intent_digest": intent_digest, "status": "DECLARED", "compensation_action": compensation_action, "compensation_resource": compensation_resource}
 
-    def require_declared(self, intent_id: str) -> dict[str, Any]:
-        row = self.conn.execute("SELECT * FROM action_compensation_plans WHERE intent_id=?", (intent_id,)).fetchone()
-        if not row or row["status"] not in {"DECLARED", "PENDING"}:
+    def require_declared(self, intent_digest: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM action_compensation_plans WHERE intent_digest=?", (intent_digest,)).fetchone()
+        if not row or row["status"] not in {"DECLARED", "PENDING", "COMPENSATED"}:
             raise HardeningError("CFHS_POLICY_DENIED", "Compensatable action requires a declared compensation plan")
         return dict(row)
 
-    def complete(self, intent_id: str, result: Any) -> None:
-        self.conn.execute("UPDATE action_compensation_plans SET status='COMPENSATED',completed_at=?,result_digest=? WHERE intent_id=?", (utcnow().isoformat(), digest(result), intent_id))
+    def complete(self, intent_digest: str, result: Any) -> None:
+        self.conn.execute("UPDATE action_compensation_plans SET status='COMPENSATED',completed_at=?,result_digest=? WHERE intent_digest=?", (utcnow().isoformat(), digest(result), intent_digest))
         self.conn.commit()
 
-    def fail(self, intent_id: str, result: Any) -> None:
-        self.conn.execute("UPDATE action_compensation_plans SET status='FAILED',completed_at=?,result_digest=? WHERE intent_id=?", (utcnow().isoformat(), digest(result), intent_id))
+    def fail(self, intent_digest: str, result: Any) -> None:
+        self.conn.execute("UPDATE action_compensation_plans SET status='FAILED',completed_at=?,result_digest=? WHERE intent_digest=?", (utcnow().isoformat(), digest(result), intent_digest))
         self.conn.commit()
 
 
@@ -506,17 +505,17 @@ class ConsequentialActionCoordinator:
         except Exception as exc:
             return exc
 
-    def _try_compensate(self, intent: ActionIntent, arguments: dict[str, Any], cause: Exception, compensate: Callable | None) -> tuple[bool, Exception | None]:
-        if intent.side_effect_class not in {"S1", "S2"} or compensate is None:
+    def _try_compensate(self, intent_digest: str, side_effect_class: str, arguments: dict[str, Any], cause: Exception, compensate: Callable | None) -> tuple[bool, Exception | None]:
+        if side_effect_class not in {"S1", "S2"} or compensate is None:
             return False, None
         try:
             result = compensate(arguments, cause)
-            if intent.side_effect_class == "S2":
-                self.compensation.complete(intent.intent_id, result)
+            if side_effect_class == "S2":
+                self.compensation.complete(intent_digest, result)
             return True, None
         except Exception as exc:
-            if intent.side_effect_class == "S2":
-                self._safe(lambda: self.compensation.fail(intent.intent_id, {"error": str(exc)}))
+            if side_effect_class == "S2":
+                self._safe(lambda: self.compensation.fail(intent_digest, {"error": str(exc)}))
             return False, exc
 
     def execute(
@@ -535,9 +534,13 @@ class ConsequentialActionCoordinator:
             raise HardeningError(code, "Action authorization did not allow execution", decision)
 
         intent_digest = intent.intent_digest()
+        prior = self.replay.check(intent.replay_nonce, intent_digest)
+        if prior["status"] == "REPLAY_COMMITTED":
+            return {"status": "REPLAYED", "result_digest": prior.get("result_digest"), "intent_digest": intent_digest}
+
         self.approvals.require_satisfied(intent.approval_request_id, intent_digest, intent.required_approvals)
         if intent.side_effect_class == "S2":
-            self.compensation.require_declared(intent.intent_id)
+            self.compensation.require_declared(intent_digest)
         if intent.side_effect_class in {"S1", "S2"} and compensate is None:
             raise HardeningError("CFHS_POLICY_DENIED", "Reversible/compensatable action requires a compensation callback")
 
@@ -550,12 +553,12 @@ class ConsequentialActionCoordinator:
         invoke_attempted = False
         try:
             reservations = [r["reservation_id"] for r in self.resources.reserve_many(intent.intent_id, intent.resource_requests)]
-            audit_id = self.audit.prepare(intent)  # no external effect before durable PREPARE
+            audit_id = self.audit.prepare(intent)
             invoke_attempted = True
             try:
                 result = invoke(arguments)
             except Exception as invoke_exc:
-                compensated, comp_error = self._try_compensate(intent, arguments, invoke_exc, compensate)
+                compensated, comp_error = self._try_compensate(intent_digest, intent.side_effect_class, arguments, invoke_exc, compensate)
                 self._safe(lambda: self.audit.fail(audit_id, "CFHS_DEVICE_FAILED", {"error": str(invoke_exc), "compensated": compensated, "compensation_error": str(comp_error) if comp_error else None}))
                 if compensated or intent.side_effect_class == "S0":
                     self._safe(lambda: self.resources.release_many(reservations))
@@ -571,7 +574,7 @@ class ConsequentialActionCoordinator:
             try:
                 self.audit.commit(audit_id, result_digest)
             except Exception as audit_exc:
-                compensated, comp_error = self._try_compensate(intent, arguments, audit_exc, compensate)
+                compensated, comp_error = self._try_compensate(intent_digest, intent.side_effect_class, arguments, audit_exc, compensate)
                 if compensated:
                     self._safe(lambda: self.resources.release_many(reservations))
                     self._safe(lambda: self.replay.fail(intent.replay_nonce, "CFHS_AUDIT_COMMIT_FAILED", False))
