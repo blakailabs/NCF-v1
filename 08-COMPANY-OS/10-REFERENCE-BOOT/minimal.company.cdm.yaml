@@ -1,0 +1,43 @@
+cdm:
+  version: "0.1"
+  id: "cdm-example-minimal"
+
+company:
+  legal_name: "Example Company LLC"
+  display_name: "Example Company"
+  primary_timezone: "America/Chicago"
+  currencies: [USD]
+
+principals:
+  - principal_id: "founder"
+    type: human
+    display_name: "Founder"
+  - principal_id: "research-agent"
+    type: agent
+    display_name: "Research Agent"
+
+systems:
+  - system_id: "mail-primary"
+    name: "Primary Mail"
+    category: mail
+    provider: "example-mail"
+    credential_ref: "secret://mail/primary"
+
+repositories:
+  - repository_id: "company-files"
+    type: files
+    mode: read-only
+
+applications:
+  - application_id: "crm"
+    name: "CRM"
+
+capabilities:
+  - capability_id: "research"
+    name: "Research"
+
+resources:
+  - resource_id: "outbound-email"
+    type: outbound_messages
+    period: daily
+    hard_limit: 100

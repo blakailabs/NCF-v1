@@ -1,0 +1,233 @@
+openapi: 3.1.0
+info:
+  title: Company Kernel API
+  version: 0.1.0
+  description: Privileged syscall/control-plane contract for CFHS Company OS.
+servers:
+  - url: http://localhost:8042
+security:
+  - KernelSession: []
+paths:
+  /v1/health:
+    get:
+      operationId: kernelHealth
+      security: []
+      responses:
+        '200':
+          description: Kernel health
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /v1/authorize:
+    post:
+      operationId: authorize
+      parameters:
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizeRequest'
+      responses:
+        '200':
+          description: Policy decision
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizationDecision'
+        default:
+          $ref: '#/components/responses/KernelError'
+  /v1/processes:
+    post:
+      operationId: spawnProcess
+      parameters:
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessSpawnRequest'
+      responses:
+        '201':
+          description: Process created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Process'
+        default:
+          $ref: '#/components/responses/KernelError'
+  /v1/processes/{process_id}:
+    get:
+      operationId: getProcess
+      parameters:
+        - name: process_id
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Process
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Process'
+        default:
+          $ref: '#/components/responses/KernelError'
+  /v1/processes/{process_id}/signals:
+    post:
+      operationId: signalProcess
+      parameters:
+        - name: process_id
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [signal]
+              properties:
+                signal:
+                  type: string
+                  enum: [PAUSE, RESUME, CANCEL, TERMINATE]
+                reason: {type: string}
+      responses:
+        '202': {description: Signal accepted}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/processes/{process_id}/checkpoints:
+    post:
+      operationId: checkpointProcess
+      parameters:
+        - name: process_id
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '201': {description: Checkpoint created}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/fs/stat:
+    post:
+      operationId: fsStat
+      x-cfhs-syscall: stat
+      parameters: &ctx
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FsPathRequest'}
+      responses:
+        '200': {description: Metadata, content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/fs/list:
+    post:
+      operationId: fsList
+      x-cfhs-syscall: list
+      parameters: *ctx
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FsPathRequest'}}}
+      responses:
+        '200': {description: Directory entries, content: {application/json: {schema: {type: array, items: {type: object}}}}}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/fs/read:
+    post:
+      operationId: fsRead
+      x-cfhs-syscall: read
+      parameters: *ctx
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FsPathRequest'}}}
+      responses:
+        '200': {description: File data, content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/fs/write:
+    post:
+      operationId: fsWrite
+      x-cfhs-syscall: write
+      parameters: *ctx
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/FsPathRequest'
+                - type: object
+                  required: [data]
+                  properties:
+                    data: {}
+      responses:
+        '200': {description: Write result}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/events:
+    post:
+      operationId: emitEvent
+      parameters: *ctx
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/KernelEvent'}
+      responses:
+        '202': {description: Event accepted}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/queues/{queue}/messages:
+    post:
+      operationId: enqueue
+      parameters:
+        - name: queue
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object}}}
+      responses:
+        '202': {description: Message queued}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/devices:
+    get:
+      operationId: listDevices
+      parameters: *ctx
+      responses:
+        '200': {description: Devices, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/DeviceDescriptor'}}}}}
+        default: {$ref: '#/components/responses/KernelError'}
+  /v1/devices/{device_id}:
+    get:
+      operationId: describeDevice
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: '#/components/parameters/ActorId'
+        - $ref: '#/components/parameters/ProcessId'
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200': {description: Device descriptor, content: {application/json: {schema: {$ref: '#/components/schemas/DeviceDescriptor'}}}}
+        default: {$ref: '#²È="24€€É•ÅÕ¥É•èÑÉÕ”(€€€€€€€½¹Ñ•¹Ğèí…ÁÁ±¥…Ñ¥½¸½©Í½¸èíÍ¡•µ„èíÑåÁ”è½‰©•Ñõõô(€€€€€É•ÍÁ½¹Í•Ìè(€€€€€€€€œÈÀÄœèí‘•ÍÉ¥ÁÑ¥½¸è5½Õ¹ĞÉ•…Ñ•‘ô(€€€€€€€‘•™…Õ±Ğèì‘É•˜è€œŒ½½µÁ½¹•¹ÑÌ½É•ÍÁ½¹Í•Ì½-•É¹•±ÉÉ½Èô(€€½ØÄ½µ½Õ¹ÑÌ½íµ½Õ¹Ñ}¥‘ôè(€€€‘•±•Ñ”è(€€€€€½Á•É…Ñ¥½¹%èÉ•µ½Ù•5½Õ¹Ğ(€€€€€Á…É…µ•Ñ•ÉÌè(€€€€€€€€´¹…µ”èµ½Õ¹Ñ}¥(€€€€€€€€€¥¸èÁ…Ñ (€€€€€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€€€€€Í¡•µ„èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€€´€‘É•˜è€œŒ½½µÁ½¹•¹ÑÌ½Á…É…µ•Ñ•ÉÌ½Ñ½É%œ(€€€€€€€€´€‘É•˜è€œŒ½½µÁ½¹•¹ÑÌ½Á…É…µ•Ñ•ÉÌ½AÉ½•ÍÍ%œ(€€€€€€€€´€‘É•˜è€œŒ½½µÁ½¹•¹ÑÌ½Á…É…µ•Ñ•ÉÌ½QÉ…•%œ(€€€€€É•ÍÁ½¹Í•Ìè(€€€€€€€€œÈÀĞœèí‘•ÍÉ¥ÁÑ¥½¸è5½Õ¹ĞÉ•µ½Ù•‘ô(€€€€€€€‘•™…Õ±Ğèì‘É•˜è€œŒ½½µÁ½¹•¹ÑÌ½É•ÍÁ½¹Í•Ì½-•É¹•±ÉÉ½Èô(€€½ØÄ½±½Ìè(€€€Á½ÍĞè(€€€€€½Á•É…Ñ¥½¹%èİÉ¥Ñ•1½œ(€€€€€Á…É…µ•Ñ•ÉÌè€©Ñà(€€€€€É•ÅÕ•ÍÑ	½‘äè(€€€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€€€½¹Ñ•¹Ğèí…ÁÁ±¥…Ñ¥½¸½©Í½¸èíÍ¡•µ„èíÑåÁ”è½‰©•Ñõõô(€€€€€É•ÍÁ½¹Í•Ìè(€€€€€€€€œÈÀÈœèí‘•ÍÉ¥ÁÑ¥½¸è1½œ…•ÁÑ•‘ô(€€½ØÄ½µ•ÑÉ¥Ìè(€€€Á½ÍĞè(€€€€€½Á•É…Ñ¥½¹%èİÉ¥Ñ•5•ÑÉ¥Œ(€€€€€Á…É…µ•Ñ•ÉÌè€©Ñà(€€€€€É•ÅÕ•ÍÑ	½‘äè(€€€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€€€½¹Ñ•¹Ğèí…ÁÁ±¥…Ñ¥½¸½©Í½¸èíÍ¡•µ„èíÑåÁ”è½‰©•Ñõõô(€€€€€É•ÍÁ½¹Í•Ìè(€€€€€€€€œÈÀÈœèí‘•ÍÉ¥ÁÑ¥½¸è5•ÑÉ¥Œ…•ÁÑ•‘ô(€€½ØÄ½ÑÉ…•Ìè(€€€Á½ÍĞè(€€€€€½Á•É…Ñ¥½¹%èİÉ¥Ñ•QÉ…”(€€€€€Á…É…µ•Ñ•ÉÌè€©Ñà(€€€€€É•ÅÕ•ÍÑ	½‘äè(€€€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€€€½¹Ñ•¹Ğèí…ÁÁ±¥…Ñ¥½¸½©Í½¸èíÍ¡•µ„èíÑåÁ”è½‰©•Ñõõô(€€€€€É•ÍÁ½¹Í•Ìè(€€€€€€€€œÈÀÈœèí‘•ÍÉ¥ÁÑ¥½¸èQÉ…”…•ÁÑ•‘ô)½µÁ½¹•¹ÑÌè(€Í•ÕÉ¥ÑåM¡•µ•Ìè(€€€-•É¹•±M•ÍÍ¥½¸è(€€€€€ÑåÁ”è¡ÑÑÀ(€€€€€Í¡•µ”è‰•…É•È(€€€€€‰•…É•É½Éµ…Ğè½Á…ÅÕ”µ­•É¹•°µÍ•ÍÍ¥½¸(€Á…É…µ•Ñ•ÉÌè(€€€Ñ½É%è(€€€€€¹…µ”è`µ!LµÑ½Èµ%(€€€€€¥¸è¡•…‘•È(€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€Í¡•µ„èíÑåÁ”èÍÑÉ¥¹œ°µ¥¹1•¹Ñ è€Åô(€€€AÉ½•ÍÍ%è(€€€€€¹…µ”è`µ!LµAÉ½•ÍÌµ%(€€€€€¥¸è¡•…‘•È(€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€Í¡•µ„èíÑåÁ”èÍÑÉ¥¹œ°µ¥¹1•¹Ñ è€Åô(€€€QÉ…•%è(€€€€€¹…µ”è`µ!LµQÉ…”µ%(€€€€€¥¸è¡•…‘•È(€€€€€É•ÅÕ¥É•èÑÉÕ”(€€€€€Í¡•µ„èíÑåÁ”èÍÑÉ¥¹œ°µ¥¹1•¹Ñ è€Åô(€€€%‘•µÁ½Ñ•¹å-•äè(€€€€€¹…µ”è%‘•µÁ½Ñ•¹äµ-•ä(€€€€€¥¸è¡•…‘•È(€€€€€É•ÅÕ¥É•è™…±Í”(€€€€€Í¡•µ„èíÑåÁ”èÍÑÉ¥¹œ°µ¥¹1•¹Ñ è€à°µ…á1•¹Ñ è€ÈÔÕô(€É•ÍÁ½¹Í•Ìè(€€€-•É¹•±ÉÉ½Èè(€€€€€‘•ÍÉ¥ÁÑ¥½¸è-•É¹•°•ÉÉ½È(€€€€€½¹Ñ•¹Ğè(€€€€€€€…ÁÁ±¥…Ñ¥½¸½©Í½¸è(€€€€€€€€€Í¡•µ„èì‘É•˜è€œŒ½½µÁ½¹•¹ÑÌ½Í¡•µ…Ì½ÉÉ½ÉI•ÍÁ½¹Í”ô(€Í¡•µ…Ìè(€€€!•…±Ñ¡I•ÍÁ½¹Í”è(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èmÍÑ…ÑÕÌ°­•É¹•±}Ù•ÉÍ¥½¸°™¡Í}Ù•ÉÍ¥½¹t(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€ÍÑ…ÑÕÌèíÑåÁ”èÍÑÉ¥¹œ°•¹Õ´èmId°I°IMUuô(€€€€€€€­•É¹•±}Ù•ÉÍ¥½¸èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€™¡Í}Ù•ÉÍ¥½¸èíÑåÁ”èÍÑÉ¥¹ô(€€€ÕÑ¡½É¥é•I•ÅÕ•ÍĞè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èm…Ñ¥½¸°É•Í½ÕÉ•t(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€…Ñ¥½¸èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€É•Í½ÕÉ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€½¹Ñ•áĞèíÑåÁ”è½‰©•Ğ°…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•ÌèÑÉÕ•ô(€€€ÕÑ¡½É¥é…Ñ¥½¹•¥Í¥½¸è(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èm‘•¥Í¥½¸°‘•¥Í¥½¹}¥°ÁÉ¥¹¥Á…±}¥°…Ñ¥½¸°É•Í½ÕÉ”°µ…Ñ¡•‘}Á½±¥¥•Ít(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€‘•¥Í¥½¸èíÑåÁ”èÍÑÉ¥¹œ°•¹Õ´èm11=\°9d°1YQ%=9}IEU%Iuô(€€€€€€€‘•¥Í¥½¹}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€ÁÉ¥¹¥Á…±}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€…Ñ¥½¸èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€É•Í½ÕÉ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€µ…Ñ¡•‘}Á½±¥¥•ÌèíÑåÁ”è…ÉÉ…ä°¥Ñ•µÌèíÑåÁ”èÍÑÉ¥¹õô(€€€€€€€½¹ÍÑÉ…¥¹ÑÌèíÑåÁ”è½‰©•Ğ°…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•ÌèÑÉÕ•ô(€€€€€€€•áÁ¥É•Í}…ĞèíÑåÁ”èmÍÑÉ¥¹œ°€¹Õ±°t°™½Éµ…Ğè‘…Ñ”µÑ¥µ•ô(€€€AÉ½•ÍÍMÁ…İ¹I•ÅÕ•ÍĞè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èm¹…µ”°½İ¹•È°•á•ÕÑ…‰±•t(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€¹…µ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€½İ¹•ÈèíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€•á•ÕÑ…‰±”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€Á…É•¹Ñ}ÁÉ½•ÍÍ}¥èíÑåÁ”èmÍÑÉ¥¹œ°€¹Õ±°uô(€€€€€€€…Á…‰¥±¥Ñ¥•ÌèíÑåÁ”è…ÉÉ…ä°¥Ñ•µÌèíÑåÁ”èÍÑÉ¥¹õô(€€€€€€€É•Í½ÕÉ•ÌèíÑåÁ”è½‰©•Ğ°…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•ÌèÑÉÕ•ô(€€€€€€€‘•Ù¥•ÌèíÑåÁ”è…ÉÉ…ä°¥Ñ•µÌèíÑåÁ”èÍÑÉ¥¹õô(€€€€€€€Ñ¥µ•½ÕÑ}Í•½¹‘ÌèíÑåÁ”è¥¹Ñ••È°µ¥¹¥µÕ´è€Åô(€€€AÉ½•ÍÌè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€É•ÅÕ¥É•èmÁÉ½•ÍÍ}¥°¹…µ”°½İ¹•È°ÍÑ…Ñ•t(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€ÁÉ½•ÍÍ}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€¹…µ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€½İ¹•ÈèíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€ÍÑ…Ñ”èíÑåÁ”èÍÑÉ¥¹œ°•¹Õ´èm1I°IQ%9°Id°IU99%9°]%Q%9°	1=-°AUM°=5A1Q°%1°911°QI5%9Q°Q%5}=UQuô(€€€€€€€Á…É•¹Ñ}ÁÉ½•ÍÍ}¥èíÑåÁ”èmÍÑÉ¥¹œ°€¹Õ±°uô(€€€€€€€ÍÑ…ÉÑ•‘}…ĞèíÑåÁ”èmÍÑÉ¥¹œ°€¹Õ±°t°™½Éµ…Ğè‘…Ñ”µÑ¥µ•ô(€€€ÍA…Ñ¡I•ÅÕ•ÍĞè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èmÁ…Ñ¡t(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€Á…Ñ èíÑåÁ”èÍÑÉ¥¹œ°Á…ÑÑ•É¸è€x¼ô(€€€-•É¹•±Ù•¹Ğè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€É•ÅÕ¥É•èm¥°Í½ÕÉ”°ÑåÁ”°Ñ¥µ”°‘…Ñ…t(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€Í½ÕÉ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€ÑåÁ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€ÍÕ‰©•ĞèíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€Ñ¥µ”èíÑåÁ”èÍÑÉ¥¹œ°™½Éµ…Ğè‘…Ñ”µÑ¥µ•ô(€€€€€€€½ÉÉ•±…Ñ¥½¹}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€…ÕÍ…Ñ¥½¹}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€‘…Ñ„èíô(€€€•Ù¥••ÍÉ¥ÁÑ½Èè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€É•ÅÕ¥É•èm‘•Ù¥•}¥°ÑåÁ”°ÁÉ½Ù¥‘•È°½Á•É…Ñ¥½¹Ít(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€‘•Ù¥•}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€ÑåÁ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€ÁÉ½Ù¥‘•ÈèíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€½Á•É…Ñ¥½¹Ìè(€€€€€€€€€ÑåÁ”è…ÉÉ…ä(€€€€€€€€€¥Ñ•µÌè(€€€€€€€€€€€ÑåÁ”è½‰©•Ğ(€€€€€€€€€€€É•ÅÕ¥É•èm¹…µ”°Í¥‘•}•™™•Ñ}±…ÍÍt(€€€€€€€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€€€€€€€¹…µ”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€€€€€€€Í¥‘•}•™™•Ñ}±…ÍÌèíÑåÁ”èÍÑÉ¥¹œ°•¹Õ´èmLÀ°LÄ°LÈ°LÍuô(€€€€€€€€€€€€€É•ÅÕ¥É•‘}…Á…‰¥±¥Ñ¥•ÌèíÑåÁ”è…ÉÉ…ä°¥Ñ•µÌèíÑåÁ”èÍÑÉ¥¹õô(€€€€€€€€€€€€€¥‘•µÁ½Ñ•¹å}ÍÕÁÁ½ÉÑ•èíÑåÁ”è‰½½±•…¹ô(€€€•Ù¥•%¹Ù½­•I•ÅÕ•ÍĞè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èm½Á•É…Ñ¥½¸°…ÉÕµ•¹ÑÍt(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€½Á•É…Ñ¥½¸èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€…ÉÕµ•¹ÑÌèíÑåÁ”è½‰©•Ğ°…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•ÌèÑÉÕ•ô(€€€€€€€…ÕÑ¡½É¥é…Ñ¥½¹}‘•¥Í¥½¹}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€•Ù¥•%¹Ù½­•I•ÍÕ±Ğè(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€É•ÅÕ¥É•èm¥¹Ù½…Ñ¥½¹}¥°‘•Ù¥•}¥°½Á•É…Ñ¥½¸°Í¥‘•}•™™•Ñ}±…ÍÌ°ÍÑ…ÑÕÍt(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€¥¹Ù½…Ñ¥½¹}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€‘•Ù¥•}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€½Á•É…Ñ¥½¸èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€Í¥‘•}•™™•Ñ}±…ÍÌèíÑåÁ”èÍÑÉ¥¹œ°•¹Õ´èmLÀ°LÄ°LÈ°LÍuô(€€€€€€€ÍÑ…ÑÕÌèíÑåÁ”èÍÑÉ¥¹œ°•¹Õ´èmMU°%1°U9-9=]9uô(€€€€€€€É•ÍÕ±Ğèíô(€€€€€€€…Õ‘¥Ñ}É•½É‘}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€•µ¥ÑÑ•‘}•Ù•¹Ñ}¥‘ÌèíÑåÁ”è…ÉÉ…ä°¥Ñ•µÌèíÑåÁ”èÍÑÉ¥¹õô(€€€M•É•Ñ1•…Í”è(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èm±•…Í•}¥°Í•É•Ñ}É•˜°…Õ‘¥•¹”°•áÁ¥É•Í}…Ñt(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€±•…Í•}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€Í•É•Ñ}É•˜èíÑåÁ”èÍÑÉ¥¹œ°Á…ÑÑ•É¸è€yÍ•É•Ğè¼¼ô(€€€€€€€…Õ‘¥•¹”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€•áÁ¥É•Í}…ĞèíÑåÁ”èÍÑÉ¥¹œ°™½Éµ…Ğè‘…Ñ”µÑ¥µ•ô(€€€€€€€¡…¹‘±”èíÑåÁ”èÍÑÉ¥¹œ°‘•ÍÉ¥ÁÑ¥½¸è=Á…ÅÕ”¹½¸µÍ•É•Ğ±•…Í”¡…¹‘±•ô(€€€ÉÉ½ÉI•ÍÁ½¹Í”è(€€€€€ÑåÁ”è½‰©•Ğ(€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€É•ÅÕ¥É•èm•ÉÉ½Ét(€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€•ÉÉ½Èè(€€€€€€€€€ÑåÁ”è½‰©•Ğ(€€€€€€€€€…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•Ìè™…±Í”(€€€€€€€€€É•ÅÕ¥É•èm½‘”°µ•ÍÍ…”°É•ÅÕ•ÍÑ}¥°ÑÉ…•}¥°É•ÑÉå…‰±•t(€€€€€€€€€ÁÉ½Á•ÉÑ¥•Ìè(€€€€€€€€€€€½‘”è(€€€€€€€€€€€€€ÑåÁ”èÍÑÉ¥¹œ(€€€€€€€€€€€€€•¹Õ´èm!M}%9Y1%}IEUMP°!M}U9UQ!9Q%Q°!M}A=1%e}9%°!M}1YQ%=9}IEU%I°!M}IM=UI}a!UMQ°!M}9=Q}=U9°!M}=91%P°!M}Y%}U9Y%1	1°!M}Y%}%1°!M}MIQ}9%°!M}5=U9Q}%1°!M}AI=MM}%9Y1%}MQQ°!M}%5A=Q9e}=91%P°!M}%9QI91t(€€€€€€€€€€€µ•ÍÍ…”èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€€€€€É•ÅÕ•ÍÑ}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€€€€€ÑÉ…•}¥èíÑåÁ”èÍÑÉ¥¹ô(€€€€€€€€€€€É•ÑÉå…‰±”èíÑåÁ”è‰½½±•…¹ô(€€€€€€€€€€€‘•Ñ…¥±ÌèíÑåÁ”è½‰©•Ğ°…‘‘¥Ñ¥½¹…±AÉ½Á•ÉÑ¥•ÌèÑÉÕ•ô(
