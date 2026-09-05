@@ -1,149 +1,162 @@
 # Company Operating System Runtime Status
 
 **Updated:** 2026-09-05  
-**Current branch:** `feature/company-kernel-trust-v0.3`
+**Current branch:** `feature/company-kernel-trust-hardening-v0.4`
 
 ## Canonical project identity
 
 **Project:** Company Operating System  
 **Recommended GitHub slug:** `Company-Operating-System`  
-**Historical repository slug:** `NCF-v1` (administrative rename pending)
+**Historical repository slug:** `NCF-v1` — administrative rename pending
 
 NCF remains the constitutional governance layer inside the broader Company Operating System project.
 
-## Implemented and validated foundations
-
-- CDM machine contract v0.1
-- deterministic CFHS materializer v0.1
-- staged/atomic materialization behavior for new targets
-- inline-secret rejection and opaque `secret://` references
-- Company Kernel API contract v0.1
-- OpenAPI 3.1 contract
-- minimal CDM → CFHS reference materialization
-
-## Company Kernel runtime v0.1
-
-- runnable kernel daemon
-- durable SQLite principal/process/checkpoint/audit state
-- default-deny capabilities
-- contextual amount/resource limits
-- `ALLOW`, `DENY`, and `ELEVATION_REQUIRED`
-- human-approved narrow, expiring elevation
-- mock S2/S3 device broker
-- idempotency
-- resource ceilings
-- checkpoint/restart recovery
-
-## Kernel hardening v0.2
-
-- authenticated opaque kernel sessions
-- session hashing, expiration, and revocation
-- process ownership/supervision binding
-- restrictive-only executable JSON policy overlay
-- tamper-evident SHA-256 audit chain
-- environment-backed secret-broker reference abstraction
-- sandboxed S0 read-only HTTP adapter
-- GitHub Actions validation
-
-### v0.2 validation
-
-GitHub Actions run `33998002023` passed:
+## Architecture implemented
 
 ```text
-Compile kernel................ PASS
-Combined kernel tests......... PASS (16 tests)
-Committed secret scan......... PASS
+NCF constitutional governance
+→ CDM company discovery contract
+→ CFHS filesystem hierarchy
+→ deterministic CFHS materializer
+→ Company Kernel API
+→ Company Kernel runtime v0.1
+→ Kernel hardening v0.2
+→ Kernel Trust Layer v0.3
+→ Kernel Trust Hardening v0.4
 ```
 
-## Kernel Trust Layer v0.3
+## v0.1 — runnable kernel
 
-Implemented on `feature/company-kernel-trust-v0.3`:
+Implemented:
 
-- canonical repository/project identity updated internally to **Company Operating System**
-- signed restrictive policy package contract
-- package integrity verification
-- atomic signed-policy activation
-- trusted signing-key registry abstraction
-- session rotation with old-token revocation
-- parent/child capability bounding
-- process-level capability bounds enforced after principal authorization
-- durable delegation proofs with proof digests
-- provider-neutral vault interface
-- audience-bound vault secret leases
-- durable SQLite event/queue subsystem
-- claim/ack/release/retry ownership semantics
-- independent audit-anchor provider abstraction
-- hash-linked reference audit-anchor chain
-- concrete GitHub read-only provider adapter
-- no write methods on the GitHub provider adapter
-- one-time bootstrap endpoint that does not print privileged sessions at startup
-- explicit threat model and adversarial test catalog
-- end-to-end TrustKernel integration tests committed
+- durable principal/process/checkpoint/audit state;
+- default-deny capabilities;
+- contextual amount/resource limits;
+- `ALLOW`, `DENY`, `ELEVATION_REQUIRED`;
+- narrow human-approved elevation;
+- mock S2/S3 devices;
+- idempotency and resource ceilings;
+- checkpoint/restart recovery.
 
-### Independent v0.3 primitive validation
+## v0.2 — authenticated hardening
 
-A separate local harness validated **11/11** trust checks:
+Implemented:
+
+- opaque kernel sessions;
+- session hashing/expiration/revocation;
+- process ownership/supervision binding;
+- restrictive-only policy overlay;
+- tamper-evident audit chain;
+- secret lease abstraction;
+- sandboxed S0 read-only HTTP adapter.
+
+Last clean GitHub Actions execution:
 
 ```text
-Signed policy verification................ PASS
-Policy tamper rejection................... PASS
-Atomic policy activation.................. PASS
-Audit-anchor tamper detection............. PASS
-Vault audience binding.................... PASS
-Session rotation/replay rejection......... PASS
-Bounded capability acceptance............. PASS
-Child privilege escalation rejection...... PASS
-Durable queue ownership/retry............. PASS
-GitHub read-only GET behavior............. PASS
-GitHub write API absence.................. PASS
+Run 33998002023
+Compile................ PASS
+Combined tests......... PASS (16)
+Secret scan............ PASS
 ```
 
-### Current CI limitation
+## v0.3 — trust provenance
 
-GitHub is currently creating `BuildFailed / startup_failure` workflow placeholders with **zero jobs** for the v0.3 branch. These failures occur before checkout, compilation, or tests and are therefore tracked as CI infrastructure/startup failures, not software test failures.
+Implemented:
 
-The v0.3 integration tests remain release-blocking until they receive a clean CI or equivalent clean-environment execution.
+- internally renamed project identity to **Company Operating System**;
+- signed restrictive policy-package contract;
+- atomic activation;
+- session rotation;
+- process capability bounds;
+- durable delegation proofs;
+- provider-neutral vault interface;
+- durable event/queue ownership semantics;
+- independent audit-anchor abstraction;
+- GitHub read-only provider with no write API;
+- one-time bootstrap endpoint;
+- threat model and adversarial test catalog.
 
-## Known v0.3 trust limitations
+Independent reference harness:
 
-- reference policy signing uses dependency-free HMAC; production requires asymmetric signing/HSM or equivalent
-- reference audit anchor is independent of the kernel database but still local; production requires remote immutable anchoring
-- reference `MemoryVaultProvider` is test-only; production requires a real vault provider
-- bootstrap completion is process-local in the current reference daemon and must become durable before production
-- queue claim leases do not yet expire automatically
-- no external IdP/OIDC/MFA
-- no distributed resource reservation/cgroup-equivalent runtime
-- no live rollback/compensation engine
-- no HA/failover/rescue implementation
-- no write-capable production provider is enabled
+```text
+Trust primitive checks........ 11 / 11 PASS
+```
 
-## Release gate for any live S2/S3 provider
+Full v0.3 CI remains release-blocked because GitHub Actions is currently producing `startup_failure` placeholders with zero jobs before checkout or test execution.
 
-No production write-capable email, payment, banking, CRM, code-deployment, advertising, accounting, or legal-signature provider may be enabled until all of the following are proven:
+## v0.4 — trust hardening
+
+Implemented on `feature/company-kernel-trust-hardening-v0.4`:
+
+- durable restart-safe one-time bootstrap state;
+- bootstrap completion and initial session issuance in one SQLite transaction;
+- restart no longer requires the original bootstrap secret after first initialization;
+- persistent signed-policy contents across restart;
+- semantic-version rollback protection;
+- same-version content-substitution rejection;
+- recursive delegation-chain verification;
+- delegation proof/process-bound tamper detection;
+- authorization-time verification of delegated provenance;
+- expiring durable queue claim leases;
+- dead-letter transition and reason tracking;
+- external OIDC identity broker contract;
+- one-time OIDC nonce consumption and kernel-session creation in one transaction;
+- remote HTTPS audit-anchor provider contract;
+- external HTTPS vault-provider implementation;
+- runnable v0.4 server wiring;
+- dedicated v0.4 restart/rollback/delegation/identity/anchor/vault tests committed.
+
+## v0.4 acceptance status
+
+```text
+IMPLEMENTED
+TEST COVERAGE COMMITTED
+CLEAN-ENVIRONMENT EXECUTION REQUIRED
+PRODUCTION WRITE RELEASE BLOCKED
+```
+
+The GitHub Actions startup problem remains separate from runtime correctness: affected workflow records contain zero jobs and fail before checkout/compile/test.
+
+## Remaining trust gaps before live S2/S3 business writes
+
+- production asymmetric policy-signature verifier/HSM integration;
+- production cryptographic OIDC provider implementation and MFA/IdP configuration;
+- deployed remote immutable audit-anchor service;
+- protected vault bootstrap credential handling such as mTLS/HSM/workload identity;
+- distributed resource reservations;
+- durable replay/nonces across clustered kernels;
+- compensation/rollback orchestration;
+- fail-closed audit commit for consequential actions;
+- multi-party approval for selected S3 actions;
+- distributed queue coordination/HA/failover;
+- clean-environment adversarial certification.
+
+## Release gate
+
+No production write-capable email, payment, banking, CRM, deployment, advertising, accounting, or legal-signature provider should be enabled until:
 
 ```text
 identity verified
-+ process authority bounded
-+ policy authenticity verified
++ recursive authority provenance verified
++ signed policy authenticity verified
 + secret scope bounded
-+ audit commit available
++ audit commit guaranteed
 + external audit anchor available
-+ replay/idempotency protection available
++ replay protection available
 + resource reservation available
-+ rollback/compensation defined
-+ approval path defined where required
++ compensation/rollback defined
++ approval requirements satisfied
 ```
 
 ## Next engineering milestone
 
-Build **Company Kernel Trust Hardening v0.4**:
+Build the **Company Kernel Action Safety Layer v0.5**:
 
-1. durable one-time bootstrap ceremony;
-2. asymmetric signed/versioned policy packages with rollback protection;
-3. real vault-provider interface implementation;
-4. remote/immutable audit-anchor provider;
-5. expiring queue claims + dead-letter handling;
-6. recursive delegation-proof verification across process trees;
-7. external identity/OIDC contract;
-8. clean-environment adversarial certification run;
-9. only then evaluate the first sandboxed real S2 write adapter.
+1. durable resource reservation/commit/release;
+2. consequential-action replay/nonces;
+3. compensation and rollback contracts;
+4. fail-closed audit transaction semantics;
+5. multi-party approval policies for selected S3 actions;
+6. action intent/evidence envelope;
+7. adversarial tests for partial failure and duplicate execution;
+8. only after certification, evaluate the first sandboxed real S2 write adapter.
