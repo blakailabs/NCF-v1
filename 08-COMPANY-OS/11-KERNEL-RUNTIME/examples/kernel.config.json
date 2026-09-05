@@ -19,7 +19,10 @@
       "capabilities": [
         {"id":"cap-mail-send","action":"mail.send","resource":"/dev/mail/primary","conditions":{"resource_type":"outbound_messages","hard_limit":100}},
         {"id":"cap-refund","action":"payments.refund","resource":"/dev/payments/primary","conditions":{"max_amount":250}},
-        {"id":"cap-http-readonly","action":"http.get","resource":"/dev/http/readonly"}
+        {"id":"cap-http-readonly","action":"http.get","resource":"/dev/http/readonly"},
+        {"id":"cap-github-readonly","action":"github.repo.read","resource":"/dev/github/readonly"},
+        {"id":"cap-event-publish","action":"event.publish","resource":"/run/ipc/company.*"},
+        {"id":"cap-event-consume","action":"event.consume","resource":"/run/ipc/company.*"}
       ]
     }
   ],
@@ -41,6 +44,12 @@
       "resource":"/dev/http/readonly",
       "provider":"sandboxed-http",
       "operations":[{"name":"http.get","side_effect_class":"S0","idempotency_required":false}]
+    },
+    {
+      "id":"github-readonly",
+      "resource":"/dev/github/readonly",
+      "provider":"github-api",
+      "operations":[{"name":"github.repo.read","side_effect_class":"S0","idempotency_required":false}]
     }
   ]
 }
