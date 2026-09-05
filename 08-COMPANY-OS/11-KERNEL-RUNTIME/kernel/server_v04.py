@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -20,14 +19,13 @@ from .trust_hardening import DurableBootstrapCeremony, LeasedDeadLetterEventBus
 
 class TrustKernelV04(TrustKernel):
     def __init__(self, hardened: HardenedKernel, trusted_policy_keys: dict[str, bytes] | None = None):
-        # Build the v0.3 composition, then replace restart-sensitive components.
         super().__init__(hardened, trusted_policy_keys or {})
         self.signed_policies_v04 = PersistentRollbackProtectedPolicyStore(self.core.store.conn, trusted_policy_keys or {})
         self.events_v04 = LeasedDeadLetterEventBus(self.core.store.conn, max_attempts=5, claim_ttl_seconds=30)
         self.bootstrap = DurableBootstrapCeremony(self.core.store.conn)
         self.delegations = RecursiveDelegationVerifier(self.core.store.conn)
 
-    def _evaluate_signed_policies(self, principal: str, action: str, resource: str, context: dict[str, Any]) -> tuple[str | None, list[str]]:
+    def _evaluate_signed_policies(self, principal: str, action: str, resource: str, context: dict[str, Any]):
         matches = []
         for policy in self.signed_policies_v04.active_policies():
             if not self._match(principal, str(policy.get("principal", "*"))):
@@ -55,11 +53,11 @@ class TrustKernelV04(TrustKernel):
         if row and row["parent_id"] is not None:
             self.delegations.verify_chain(process_id)
 
-    def authorize(self, ctx: RequestContext, action: str, resource: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    def authorize(self, ctx: RequestContext, action: str, resource: str, context: dict[str, Any] | None = None):
         self._verify_process_provenance_if_delegated(ctx.process_id)
         return super().authorize(ctx, action, resource, context)
 
-    def install_signed_policy_packages(self, ctx: RequestContext, envelopes: list[dict[str, Any]]) -> dict[str, Any]:
+    def install_signed_policy_packages(self, ctx: RequestContext, envelopes: list[dict[str, Any]]):
         decision = self.authorize(ctx, "kernel.policy.install", "/etc/policy/signed", {})
         if decision["decision"] != "ALLOW":
             raise HardeningError("CFHS_POLICY_DENIED", "Signed policy installation not authorized", decision)
@@ -67,7 +65,7 @@ class TrustKernelV04(TrustKernel):
         self.hardened._chain(ctx, "policy.packages.installed.v04", result)
         return result
 
-    def publish_event(self, ctx: RequestContext, topic: str, payload: dict[str, Any], delay_seconds: int = 0) -> dict[str, Any]:
+    def publish_event(self, ctx: RequestContext, topic: str, payload: dict[str, Any], delay_seconds: int = 0):
         decision = self.authorize(ctx, "event.publish", "/run/ipc/" + topic, {})
         if decision["decision"] != "ALLOW":
             raise HardeningError("CFHS_POLICY_DENIED", "Event publish denied", decision)
@@ -93,7 +91,6 @@ class TrustKernelV04(TrustKernel):
 
 class Handler(BaseHTTPRequestHandler):
     trust: TrustKernelV04 = None  # type: ignore
-    bootstrap_secret: str = ""
     bootstrap_principal: str = "human:owner"
 
     def log_message(self, *_args):
@@ -161,13 +158,15 @@ class Handler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             body = self._json()
             if path == "/v4/bootstrap":
-                result = self.trust.bootstrap.complete(
-                    self.trust.hardened.sessions,
-                    str(body.get("bootstrap_secret", "")),
-                    self.bootstrap_principal,
-                    int(body.get("ttl_seconds", 900)),
+                return self._send(
+                    201,
+                    self.trust.bootstrap.complete(
+                        self.trust.hardened.sessions,
+                        str(body.get("bootstrap_secret", "")),
+                        self.bootstrap_principal,
+                        int(body.get("ttl_seconds", 900)),
+                    ),
                 )
-                return self._send(201, result)
 
             ctx = self._ctx()
             if path == "/v4/authorize":
@@ -223,20 +222,21 @@ def main():
     ap.add_argument("--port", type=int, default=8045)
     args = ap.parse_args()
 
-    bootstrap_secret = os.environ.get(args.bootstrap_env)
-    if not bootstrap_secret:
-        raise SystemExit(f"Bootstrap environment variable is required: {args.bootstrap_env}")
-
     core = CompanyKernel.from_file(args.state_dir, args.config)
     hardened = HardenedKernel(core, args.policy_dir, set(), False)
     Handler.trust = TrustKernelV04(hardened, _load_policy_keys(args.policy_key_env))
-    Handler.bootstrap_secret = bootstrap_secret
     Handler.bootstrap_principal = args.bootstrap_principal
-    Handler.trust.bootstrap.initialize(bootstrap_secret)
+
+    bootstrap_state = Handler.trust.bootstrap.status()
+    if not bootstrap_state["initialized"]:
+        bootstrap_secret = os.environ.get(args.bootstrap_env)
+        if not bootstrap_secret:
+            raise SystemExit(f"Bootstrap environment variable is required only for first initialization: {args.bootstrap_env}")
+        bootstrap_state = Handler.trust.bootstrap.initialize(bootstrap_secret)
 
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Company Kernel Trust Hardening v0.4 listening on http://{args.host}:{args.port}", flush=True)
-    print(f"Bootstrap state: {Handler.trust.bootstrap.status()['status']}", flush=True)
+    print(f"Bootstrap state: {bootstrap_state['status']}", flush=True)
     server.serve_forever()
 
 
