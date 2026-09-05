@@ -1,0 +1,37 @@
+{
+  "cfhs_version": "0.1",
+  "principals": [
+    {
+      "id": "human:owner",
+      "type": "human",
+      "active": true,
+      "capabilities": [
+        {"id":"cap-owner-all","action":"*","resource":"*"},
+        {"id":"cap-approve-elevation","action":"kernel.elevation.approve","resource":"*"}
+      ]
+    },
+    {
+      "id": "agent:ops",
+      "type": "agent",
+      "active": true,
+      "capabilities": [
+        {"id":"cap-mail-send","action":"mail.send","resource":"/dev/mail/primary","conditions":{"resource_type":"outbound_messages","hard_limit":100}},
+        {"id":"cap-refund","action":"payments.refund","resource":"/dev/payments/primary","conditions":{"max_amount":250}}
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "id":"mail-primary",
+      "resource":"/dev/mail/primary",
+      "provider":"mock-mail",
+      "operations":[{"name":"mail.send","side_effect_class":"S2","idempotency_required":true,"resource_type":"outbound_messages"}]
+    },
+    {
+      "id":"payments-primary",
+      "resource":"/dev/payments/primary",
+      "provider":"mock-payments",
+      "operations":[{"name":"payments.refund","side_effect_class":"S3","idempotency_required":true}]
+    }
+  ]
+}
