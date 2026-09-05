@@ -19,7 +19,7 @@ class HardenedIntegrationTests(unittest.TestCase):
         ctx=self.hk.authenticated_context(self.agent_token,self.proc_id,'trace:agent');self.assertEqual(ctx.actor_id,'agent:ops')
         with self.assertRaises(HardeningError):self.hk.authenticated_context(self.agent_token,'kernel:bootstrap','trace:bad')
     def test_policy_can_reduce_base_authority(self):
-        ctx=self.hk.authenticated_context(self.agent_token,self.proc_id,'trace:refund');d=self.hk.authorize(ctx,'payments.refund','/dev/payments/primary',{'amount':5000});self.assertEqual(d['decision'],'ELEVATION_REQUIRED');self.assertIn('elevate-high-refund',d['matched_policies'])
+        ctx=self.hk.authenticated_context(self.agent_token,self.proc_id,'trace:refund');d=self.hk.authorize(ctx,'payments.refund','/dev/payments/primary',{'amount':200});self.assertEqual(d['decision'],'ELEVATION_REQUIRED');self.assertIn('elevate-refund-over-100',d['matched_policies'])
     def test_readonly_live_device_and_audit_chain(self):
         ctx=self.hk.authenticated_context(self.agent_token,self.proc_id,'trace:http');r=self.hk.invoke_readonly_http(ctx,f'http://127.0.0.1:{self.srv.server_port}/status','PUBLIC');self.assertEqual(r['status'],200);self.assertTrue(self.hk.audit_chain.verify()['valid'])
     def test_restricted_external_data_denied(self):
