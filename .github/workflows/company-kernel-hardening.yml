@@ -5,11 +5,6 @@ on:
     branches:
       - feature/company-kernel-hardening-v0.2
       - feature/company-kernel-trust-v0.3
-    paths:
-      - '08-COMPANY-OS/11-KERNEL-RUNTIME/kernel/**'
-      - '08-COMPANY-OS/11-KERNEL-RUNTIME/tests/**'
-      - '08-COMPANY-OS/11-KERNEL-RUNTIME/examples/**'
-      - '.github/workflows/company-kernel-hardening.yml'
   pull_request:
     paths:
       - '08-COMPANY-OS/11-KERNEL-RUNTIME/kernel/**'
