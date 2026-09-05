@@ -7,7 +7,9 @@
       "active": true,
       "capabilities": [
         {"id":"cap-owner-all","action":"*","resource":"*"},
-        {"id":"cap-approve-elevation","action":"kernel.elevation.approve","resource":"*"}
+        {"id":"cap-approve-elevation","action":"kernel.elevation.approve","resource":"*"},
+        {"id":"cap-issue-session","action":"kernel.session.issue","resource":"/sys/identity/sessions"},
+        {"id":"cap-supervise-process","action":"kernel.process.supervise","resource":"/proc/*"}
       ]
     },
     {
@@ -16,7 +18,8 @@
       "active": true,
       "capabilities": [
         {"id":"cap-mail-send","action":"mail.send","resource":"/dev/mail/primary","conditions":{"resource_type":"outbound_messages","hard_limit":100}},
-        {"id":"cap-refund","action":"payments.refund","resource":"/dev/payments/primary","conditions":{"max_amount":250}}
+        {"id":"cap-refund","action":"payments.refund","resource":"/dev/payments/primary","conditions":{"max_amount":250}},
+        {"id":"cap-http-readonly","action":"http.get","resource":"/dev/http/readonly"}
       ]
     }
   ],
@@ -32,6 +35,12 @@
       "resource":"/dev/payments/primary",
       "provider":"mock-payments",
       "operations":[{"name":"payments.refund","side_effect_class":"S3","idempotency_required":true}]
+    },
+    {
+      "id":"http-readonly",
+      "resource":"/dev/http/readonly",
+      "provider":"sandboxed-http",
+      "operations":[{"name":"http.get","side_effect_class":"S0","idempotency_required":false}]
     }
   ]
 }
