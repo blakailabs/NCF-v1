@@ -6,7 +6,7 @@ import os
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from .control_plane_fencing import TrustKernelV07ControlPlaneFinalGate
+from .exact_authority import TrustKernelV07ExactAuthorityFinalGate
 from .hardening import HardeningError
 from .remote_anchor import HTTPSAuditAnchorProvider
 from .runtime import CompanyKernel, KernelError
@@ -16,7 +16,7 @@ from .server_v06_hardened import HardenedHandler
 
 
 class V07Handler(HardenedHandler):
-    kernel: TrustKernelV07ControlPlaneFinalGate = None  # type: ignore
+    kernel: TrustKernelV07ExactAuthorityFinalGate = None  # type: ignore
 
     def _translate_v7_path(self) -> str:
         original = self.path
@@ -37,7 +37,7 @@ class V07Handler(HardenedHandler):
                 {
                     "distributed_safety_version": "0.7",
                     "kernel_instance_id": self.kernel.kernel_instance_id,
-                    "canonical_provider_gate": "TrustKernelV07ControlPlaneFinalGate",
+                    "canonical_provider_gate": "TrustKernelV07ExactAuthorityFinalGate",
                     "production_credentials_allowed": False,
                     "provider_registry": sorted(self.kernel.providers),
                     "distributed_controls": [
@@ -58,9 +58,12 @@ class V07Handler(HardenedHandler):
                         "fenced approval mutation",
                         "atomic approval plus session provenance",
                         "versioned approval control-plane journal",
+                        "exact minor-unit financial authority",
+                        "exact-unit elevation scope",
                     ],
                     "compensation_status": "DISTRIBUTED_FENCED_AND_RECONCILABLE",
                     "approval_control_status": "FENCED_SESSION_PROVEN_AND_VERSIONED",
+                    "financial_authority_status": "EXACT_MINOR_UNITS_WITH_EXACT_ELEVATION",
                     "reference_backend_production_ready": False,
                     "audit_chain": self.kernel.hardened.audit_chain.verify(),
                     "anchor_chain": self.kernel.anchors.verify(),
@@ -116,7 +119,7 @@ def main():
     core = CompanyKernel.from_file(args.state_dir, args.config)
     hardened = HardenedKernel(core, args.policy_dir, set(), False)
     anchor = HTTPSAuditAnchorProvider(args.remote_anchor_endpoint) if args.remote_anchor_endpoint else None
-    V07Handler.kernel = TrustKernelV07ControlPlaneFinalGate(
+    V07Handler.kernel = TrustKernelV07ExactAuthorityFinalGate(
         hardened,
         _load_policy_keys(args.policy_key_env),
         anchor,
@@ -136,7 +139,8 @@ def main():
     server = ThreadingHTTPServer((args.host, args.port), V07Handler)
     print(f"Company Kernel Distributed Safety v0.7 listening on http://{args.host}:{args.port}", flush=True)
     print(f"Kernel instance: {args.kernel_instance_id}", flush=True)
-    print("Canonical gate: TrustKernelV07ControlPlaneFinalGate", flush=True)
+    print("Canonical gate: TrustKernelV07ExactAuthorityFinalGate", flush=True)
+    print("Financial authority: EXACT MINOR UNITS + EXACT-UNIT ELEVATIONS", flush=True)
     print("Approvals: FENCED + SESSION-PROVEN + ATOMICALLY VERSIONED", flush=True)
     print("PREPARE: AUTHORITY ANCHORED + EXACT CAPACITY + OWNERSHIP FENCE COORDINATED", flush=True)
     print("Execution: CURRENT TRANSACTION EPOCH + PROVIDER STALE-FENCE ACCEPTANCE REQUIRED", flush=True)
