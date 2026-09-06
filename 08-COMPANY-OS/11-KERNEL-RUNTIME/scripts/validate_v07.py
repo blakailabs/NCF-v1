@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 147
+EXPECTED_TARGETED_TESTS = 164
 TESTS = [
     # v0.5 regression surface
     "test_action_safety_v05",
@@ -27,6 +27,7 @@ TESTS = [
     # v0.7 distributed safety surface
     "test_distributed_safety_v07",
     "test_distributed_provider_gate_v07",
+    "test_distributed_state_v07",
 ]
 
 
@@ -64,6 +65,8 @@ def main() -> int:
             "provider stale-fence rejection",
             "fenced provider execution",
             "fenced reconciliation ownership",
+            "atomic fenced exact-resource prepare",
+            "versioned distributed transaction journal",
         ],
     }
     print("\nV0.7_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
