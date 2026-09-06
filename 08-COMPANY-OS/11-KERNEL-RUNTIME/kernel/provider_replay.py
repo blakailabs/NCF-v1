@@ -12,9 +12,15 @@ def utcnow() -> datetime:
 
 
 class ProviderReplayLedger:
-    """Kernel-level semantic replay binding for provider-shaped actions."""
+    """Kernel-level semantic replay binding for provider-shaped actions.
+
+    The replay nonce is reserved before provider-intent persistence. `intent_id`
+    is attached only after the durable intent exists, which closes the crash
+    window where an intent could otherwise exist without its replay guard.
+    """
 
     ALLOWED_TRANSITIONS = {
+        "RESERVED": {"RESERVED", "PENDING"},
         "PENDING": {"PENDING", "PREPARED", "FAILED_NOT_EXECUTED"},
         "PREPARED": {"PREPARED", "COMMITTED", "FAILED_NOT_EXECUTED", "RECONCILIATION_REQUIRED"},
         "RECONCILIATION_REQUIRED": {"RECONCILIATION_REQUIRED", "COMMITTED", "FAILED_NOT_EXECUTED", "COMPENSATED"},
@@ -25,12 +31,53 @@ class ProviderReplayLedger:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        columns = self.conn.execute("PRAGMA table_info(provider_replay_v06)").fetchall()
+        if columns:
+            intent_column = next((c for c in columns if c["name"] == "intent_id"), None)
+            if intent_column and int(intent_column["notnull"]) == 1:
+                try:
+                    self.conn.execute("BEGIN IMMEDIATE")
+                    self.conn.execute("ALTER TABLE provider_replay_v06 RENAME TO provider_replay_v06_pre_reservation")
+                    self.conn.execute(
+                        """
+                        CREATE TABLE provider_replay_v06(
+                            replay_nonce TEXT PRIMARY KEY,
+                            intent_digest TEXT NOT NULL,
+                            intent_id TEXT,
+                            status TEXT NOT NULL,
+                            provider_action_id TEXT,
+                            reconciliation_case_id TEXT,
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL
+                        )
+                        """
+                    )
+                    self.conn.execute(
+                        """
+                        INSERT INTO provider_replay_v06(
+                            replay_nonce,intent_digest,intent_id,status,provider_action_id,
+                            reconciliation_case_id,created_at,updated_at
+                        )
+                        SELECT replay_nonce,intent_digest,intent_id,status,provider_action_id,
+                               reconciliation_case_id,created_at,updated_at
+                          FROM provider_replay_v06_pre_reservation
+                        """
+                    )
+                    self.conn.execute("DROP TABLE provider_replay_v06_pre_reservation")
+                    self.conn.commit()
+                except Exception:
+                    self.conn.rollback()
+                    raise
+                return
         self.conn.execute(
             """
             CREATE TABLE IF NOT EXISTS provider_replay_v06(
                 replay_nonce TEXT PRIMARY KEY,
                 intent_digest TEXT NOT NULL,
-                intent_id TEXT NOT NULL,
+                intent_id TEXT,
                 status TEXT NOT NULL,
                 provider_action_id TEXT,
                 reconciliation_case_id TEXT,
@@ -48,7 +95,7 @@ class ProviderReplayLedger:
         ).fetchone()
         return dict(row) if row else None
 
-    def bind(self, replay_nonce: str, intent_digest: str, intent_id: str) -> dict[str, Any]:
+    def reserve(self, replay_nonce: str, intent_digest: str) -> dict[str, Any]:
         now = utcnow().isoformat()
         try:
             self.conn.execute("BEGIN IMMEDIATE")
@@ -60,19 +107,51 @@ class ProviderReplayLedger:
                 if row["intent_digest"] != intent_digest:
                     raise HardeningError(
                         "CFHS_IDEMPOTENCY_CONFLICT",
-                        "Provider replay nonce is already bound to a different semantic intent",
+                        "Provider replay nonce is already reserved for a different semantic intent",
                     )
                 self.conn.commit()
                 return dict(row)
             self.conn.execute(
-                "INSERT INTO provider_replay_v06(replay_nonce,intent_digest,intent_id,status,created_at,updated_at) VALUES(?,?,?,'PENDING',?,?)",
-                (replay_nonce, intent_digest, intent_id, now, now),
+                "INSERT INTO provider_replay_v06(replay_nonce,intent_digest,intent_id,status,created_at,updated_at) VALUES(?,?,NULL,'RESERVED',?,?)",
+                (replay_nonce, intent_digest, now, now),
             )
             self.conn.commit()
         except Exception:
             self.conn.rollback()
             raise
         return self.get(replay_nonce)  # type: ignore[return-value]
+
+    def attach_intent(self, replay_nonce: str, intent_digest: str, intent_id: str) -> dict[str, Any]:
+        if not intent_id:
+            raise HardeningError("CFHS_INVALID_REQUEST", "Provider replay intent id is required")
+        try:
+            self.conn.execute("BEGIN IMMEDIATE")
+            row = self.conn.execute(
+                "SELECT * FROM provider_replay_v06 WHERE replay_nonce=?",
+                (replay_nonce,),
+            ).fetchone()
+            if not row or row["intent_digest"] != intent_digest:
+                raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", "Provider replay reservation is missing or mismatched")
+            if row["intent_id"]:
+                if row["intent_id"] != intent_id:
+                    raise HardeningError("CFHS_CONFLICT", "Provider replay nonce is already attached to another intent")
+                self.conn.commit()
+                return dict(row)
+            if row["status"] != "RESERVED":
+                raise HardeningError("CFHS_CONFLICT", f"Unattached replay reservation has invalid state: {row['status']}")
+            self.conn.execute(
+                "UPDATE provider_replay_v06 SET intent_id=?,status='PENDING',updated_at=? WHERE replay_nonce=? AND intent_id IS NULL AND status='RESERVED'",
+                (intent_id, utcnow().isoformat(), replay_nonce),
+            )
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return self.get(replay_nonce)  # type: ignore[return-value]
+
+    def bind(self, replay_nonce: str, intent_digest: str, intent_id: str) -> dict[str, Any]:
+        self.reserve(replay_nonce, intent_digest)
+        return self.attach_intent(replay_nonce, intent_digest, intent_id)
 
     def transition(
         self,
@@ -90,6 +169,8 @@ class ProviderReplayLedger:
             ).fetchone()
             if not row or row["intent_digest"] != intent_digest:
                 raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", "Provider replay binding is missing or mismatched")
+            if not row["intent_id"]:
+                raise HardeningError("CFHS_CONFLICT", "Provider replay reservation is not attached to a durable intent")
             current = str(row["status"])
             allowed = self.ALLOWED_TRANSITIONS.get(current, {current})
             if target not in allowed:
@@ -122,6 +203,6 @@ class ProviderReplayLedger:
 
     def require_intent(self, replay_nonce: str, intent_digest: str) -> dict[str, Any]:
         row = self.get(replay_nonce)
-        if not row or row["intent_digest"] != intent_digest:
-            raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", "Provider replay nonce is not bound to this intent")
+        if not row or row["intent_digest"] != intent_digest or not row["intent_id"]:
+            raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", "Provider replay nonce is not attached to this intent")
         return row
