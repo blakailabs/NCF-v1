@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 181
+EXPECTED_TARGETED_TESTS = 192
 TESTS = [
     # v0.5 regression surface
     "test_action_safety_v05",
@@ -30,6 +30,7 @@ TESTS = [
     "test_distributed_state_v07",
     "test_distributed_state_hardening_v07",
     "test_transactional_provider_gate_v07",
+    "test_distributed_compensation_v07",
 ]
 
 
@@ -72,6 +73,10 @@ def main() -> int:
             "retryable safe abort",
             "pre-execution takeover after fence expiry",
             "transaction-coordinated provider lifecycle",
+            "distributed compensation ownership epoch",
+            "compensation provider idempotency",
+            "compensation unknown-outcome reconciliation",
+            "compensation reconciliation attempt history",
         ],
     }
     print("\nV0.7_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
