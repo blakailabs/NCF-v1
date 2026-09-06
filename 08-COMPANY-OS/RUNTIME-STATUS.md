@@ -98,9 +98,19 @@ Draft PR:
 #3 — Company Kernel Distributed / Production Safety v0.7
 ```
 
+### Canonical runtime
+
+```text
+kernel.server_v07
+→ TrustKernelV07TransactionalProviderGate
+→ RecoverableSQLiteFencedStateCoordinator
+```
+
+The canonical v0.7 runtime is now transaction-coordinated rather than fencing-only.
+
 ### Business-object identity
 
-Consequential operations can declare a versioned identity contract identifying the real-world target independently of replay nonce.
+Consequential operations declare a versioned identity contract identifying the real-world target independently of replay nonce.
 
 Reference refund identity:
 
@@ -111,9 +121,7 @@ payments.refund.target/v1
 → refund_reference
 ```
 
-The kernel persists only digests and contract metadata, not the raw identity values.
-
-Invariants:
+The kernel persists digests and contract metadata rather than raw identity values.
 
 ```text
 same business identity + same semantic intent → idempotent
@@ -121,7 +129,7 @@ same business identity + different semantic intent → conflict
 same semantic intent + different business identity → conflict
 ```
 
-### Monotonic fencing
+### Monotonic ownership fencing
 
 Each distributed business resource has a monotonically increasing ownership epoch:
 
@@ -129,80 +137,95 @@ Each distributed business resource has a monotonically increasing ownership epoc
 kernel A → token 1
 lease expiry / takeover
 kernel B → token 2
-stale kernel A with token 1 → rejected
+stale kernel A → rejected
 ```
 
-An expired/stale owner cannot renew, release another owner's lease, assert current ownership or advance state.
+Stale owners cannot renew, release a newer owner's lease, assert current ownership, transition distributed state or invoke the provider through the canonical gate.
 
 ### Provider/gateway stale-fence enforcement
 
-The provider boundary records the highest fence epoch observed for each provider/business resource and rejects lower tokens.
+The provider boundary records the highest observed fence epoch for a provider/business resource and rejects lower epochs.
 
-Fence metadata stays outside business arguments so a new ownership epoch does not alter the provider's v0.6 idempotency request digest.
+Fence metadata remains outside business arguments so ownership changes do not alter the v0.6 provider-idempotency digest.
 
-### Fenced provider PREPARE
+### Transaction-coordinated PREPARE
 
-Provider policy now includes a versioned business-identity contract and fence TTL.
-
-Before v0.6 provider PREPARE can complete, v0.7:
+The canonical ordering is:
 
 ```text
-validates full semantic arguments
-→ verifies business identity binding
-→ acquires/reuses an execution fence
-→ executes v0.6 approval/authorization/resource/audit PREPARE
+approval provenance
+→ authorization decision
+→ authorization evidence anchor
+→ distributed transaction PREPARE
+    ├── verify business identity
+    ├── verify semantic replay binding
+    ├── reserve exact capacity
+    ├── acquire ownership fence
+    └── journal version 1
+→ v0.6 provider PREPARE using the same exact reservation
 ```
 
-PREPARE failure releases the fence and leaves business state safely `BOUND`.
+Exact capacity and the ownership epoch are acquired atomically by the reference SQLite coordinator.
 
-A second kernel cannot prepare the same action while the active lease remains valid.
+If authorization anchoring fails, no transaction/fence/resource reservation is created.
+
+If provider PREPARE fails safely, the transaction is aborted, exact capacity and the fence are released, and retry may proceed under a higher fencing epoch while preserving history.
+
+### Pre-execution failover
+
+A dead PREPARED owner can be replaced after its lease expires:
+
+```text
+transaction T
+kernel A / token 1 / exact reservation X
+→ lease expires
+kernel B / token 2 / same transaction T / same reservation X
+```
+
+No second exact reservation is created. The stale kernel cannot execute.
 
 ### Fenced provider execution
 
-Immediately before provider invocation, v0.7 requires:
+Immediately before invocation:
 
 ```text
 replay PREPARED
-+ approval request matches anchored release evidence
-+ full arguments match semantic intent
-+ active permit belongs to this kernel instance
-+ fence is current/unexpired
-+ business identity still matches provider/intent
-+ provider/gateway accepts fence token
++ anchored release evidence matches
++ arguments match immutable semantic intent
++ transaction PREPARED
++ current kernel owns transaction
++ fence is live/current
++ business target remains bound
++ provider/gateway accepts current epoch
 ```
 
-Only then can the inherited v0.6 provider execution path run.
+The transaction transitions to `EXECUTING` before provider invocation.
 
-On terminal execution the fence is released. A stale kernel cannot execute after another kernel has taken over.
+### Reconciliation on the same transaction
 
-### Fenced reconciliation ownership
-
-Unknown provider outcomes release the execution fence and set business/replay state to `RECONCILIATION_REQUIRED`.
-
-Reconciliation then obtains a new higher ownership epoch before provider lookup:
+Unknown provider outcomes remain attached to the same transaction ID:
 
 ```text
-execution token 1
-→ unknown
-→ reconciliation token 2
-→ provider/gateway accepts token 2
+T / execution token 1
+→ RECONCILIATION_REQUIRED
+→ release execution epoch
+→ T / reconciliation token 2
+→ RECONCILING
 → provider lookup
-→ state reconciled
+→ COMMITTED | FAILED_NOT_EXECUTED | COMPENSATED
 ```
 
-A competing reconciler is blocked by the active fence.
+The versioned journal records every ownership/state epoch.
 
 ### Distributed compensation fail-closed boundary
 
-v0.6 compensation remains regression-tested, but v0.7 currently blocks compensation because distributed compensation fencing and unknown-outcome reconciliation have not yet been implemented.
+v0.6 compensation remains regression-tested, but the canonical v0.7 runtime blocks compensation until it is transaction/fence/reconciliation safe:
 
 ```text
 CFHS_DISTRIBUTED_SAFETY_REQUIRED
 ```
 
 ### Runnable v0.7 server
-
-Canonical reference launcher:
 
 ```bash
 python -m kernel.server_v07 \
@@ -214,7 +237,7 @@ python -m kernel.server_v07 \
 
 Default port: `8048`.
 
-The server exposes `/v7/...` aliases over the hardened API, requires an explicit kernel instance ID, and continues to reject production credentials/providers.
+Production credentials/providers remain disabled.
 
 ### v0.7 certification
 
@@ -225,49 +248,43 @@ cd 08-COMPANY-OS/11-KERNEL-RUNTIME
 PYTHONPATH=. python scripts/validate_v07.py
 ```
 
-Validator success requires:
+Exact-count certified surface:
 
 ```text
-compile_ok == true
-result.wasSuccessful() == true
-tests_run == 147
+102  v0.5/v0.6 regression tests
+ 28  distributed primitive tests
+ 17  fenced provider integration tests
+ 17  transaction coordinator tests
+  6  transaction recovery-hardening tests
+ 11  transactional provider integration tests
+---
+181 / 181 PASS
 ```
 
-Certified surface:
+Canonical server certification:
 
 ```text
-102 v0.5/v0.6 regression tests
-+ 28 distributed primitive tests
-+ 17 distributed provider integration tests
-= 147 / 147 PASS
-```
-
-Certified GitHub Actions run:
-
-```text
-Run ID: 34041276509
-Ran 147 tests in 3.618s
-147 PASS
+Run ID: 34043382712
+Commit: 97b42f4136e7240710a3deeff8ae2e0f4729c52e
+Ran 181 tests in 18.097s
+181 PASS
 0 failures
 0 errors
 0 skipped
 exact_test_count = true
 ```
 
-The subsequent runnable-server commits also passed the same validator step.
-
 ## Remaining v0.7 work
 
-1. shared/fenced persistence interface and production backend contract;
-2. atomic coordination among business identity reservation, semantic replay reservation, exact-resource reservation and ownership fence;
-3. ownership/fencing contracts for approval mutation and additional shared kernel state;
-4. distributed compensation execution and compensation unknown-outcome reconciliation;
-5. exact-unit financial authority thresholds;
-6. production external IdP/MFA authentication-class policy;
-7. hardened remote audit-anchor authentication/availability;
-8. provider webhook/event reconciliation;
-9. one real provider's business identity/fencing/idempotency semantics in test mode only;
-10. migration, network-partition, failover and incident drills.
+1. distributed compensation execution and compensation unknown-outcome reconciliation on the same transaction/fencing model;
+2. production shared/fenced persistence backend contract and implementation preserving current semantics across hosts;
+3. ownership/fencing for approval mutation and other shared kernel control-plane state;
+4. exact-unit financial authority thresholds;
+5. production external IdP/MFA authentication-class policy;
+6. hardened remote audit-anchor authentication/availability;
+7. provider webhook/event reconciliation;
+8. one real provider's identity/fencing/idempotency semantics in test mode only;
+9. migration, network-partition, failover and incident drills.
 
 ## Global production release gate
 
@@ -279,16 +296,16 @@ identity verified
 + policy authenticity verified
 + business target identity bound
 + semantic replay reserved
++ transaction-coordinated exact capacity acquired
 + current distributed fence held
 + provider stale-fence rejection available
 + provider idempotency supported
 + approval provenance satisfied
-+ exact resource reservation acquired
 + release authority anchored
 + provider PREPARE anchored
 + provider reconciliation available
 + compensation governed/reconcilable when required
-+ distributed ownership/fencing available for HA
++ production shared ownership/fencing backend validated
 ```
 
 ## Administrative repository rename
@@ -300,8 +317,8 @@ blakailabs/NCF-v1
 → blakailabs/Company-Operating-System
 ```
 
-The connected GitHub API cannot perform the repository-name admin mutation. See `/ADMIN-RENAME.md`.
+The connected GitHub API cannot perform that repository-name admin mutation. See `/ADMIN-RENAME.md`.
 
 ## Next v0.7 increment
 
-Define the **shared/fenced persistence contract and transaction coordinator** so business identity, semantic replay, exact resource reservation and ownership fencing no longer behave as independently committed safety records.
+Implement **distributed compensation safety** with independent compensation authority, compensation identity, a new fencing epoch, provider reversal idempotency, exact-resource reversal coordination and conservative reconciliation of uncertain compensation outcomes.
