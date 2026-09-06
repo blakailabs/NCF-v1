@@ -1,5 +1,16 @@
 {
   "cfhs_version": "0.1",
+  "security": {
+    "production_identity": {
+      "mode": "sandbox",
+      "allowed_provider_ids": ["oidc:workforce"],
+      "allowed_issuers": ["https://id.example.test"],
+      "required_amr": ["mfa"],
+      "allowed_acr": ["urn:mfa", "urn:phishing-resistant"],
+      "max_auth_age_seconds": 900,
+      "max_future_skew_seconds": 60
+    }
+  },
   "principals": [
     {
       "id": "human:owner",
