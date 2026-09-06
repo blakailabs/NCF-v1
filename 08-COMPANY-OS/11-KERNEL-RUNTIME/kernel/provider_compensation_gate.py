@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import secrets
 import sqlite3
 from dataclasses import dataclass
@@ -56,7 +55,7 @@ class ProviderCompensationIntentLedger:
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        self.conn.execute(
+        self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS provider_compensation_intents_v06(
                 compensation_intent_id TEXT PRIMARY KEY,
@@ -75,9 +74,11 @@ class ProviderCompensationIntentLedger:
                 approval_request_id TEXT,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(original_intent_digest,status) WHERE status IN ('PENDING','APPROVED')
-            )
+                updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_compensation_one_active_v06
+              ON provider_compensation_intents_v06(original_intent_digest)
+              WHERE status IN ('PENDING','APPROVED');
             """
         )
         self.conn.commit()
@@ -122,33 +123,43 @@ class ProviderCompensationIntentLedger:
             if existing["compensation_intent_digest"] != semantic:
                 raise HardeningError("CFHS_CONFLICT", "A different active compensation intent already exists")
             return dict(existing)
-        self.conn.execute(
-            """
-            INSERT INTO provider_compensation_intents_v06(
-                compensation_intent_id,compensation_intent_digest,original_intent_digest,requester_id,
-                requester_process_id,provider_id,provider_action_id,device_id,operation,resource,
-                side_effect_class,arguments_digest,required_approvals,status,created_at,updated_at
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)
-            """,
-            (
-                intent.compensation_intent_id,
-                semantic,
-                original_intent_digest,
-                requester_id,
-                requester_process_id,
-                provider_id,
-                provider_action_id,
-                device_id,
-                operation,
-                resource,
-                side_effect_class,
-                intent.arguments_digest,
-                intent.required_approvals,
-                intent.created_at,
-                intent.created_at,
-            ),
-        )
-        self.conn.commit()
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO provider_compensation_intents_v06(
+                    compensation_intent_id,compensation_intent_digest,original_intent_digest,requester_id,
+                    requester_process_id,provider_id,provider_action_id,device_id,operation,resource,
+                    side_effect_class,arguments_digest,required_approvals,status,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,'PENDING',?,?)
+                """,
+                (
+                    intent.compensation_intent_id,
+                    semantic,
+                    original_intent_digest,
+                    requester_id,
+                    requester_process_id,
+                    provider_id,
+                    provider_action_id,
+                    device_id,
+                    operation,
+                    resource,
+                    side_effect_class,
+                    intent.arguments_digest,
+                    intent.required_approvals,
+                    intent.created_at,
+                    intent.created_at,
+                ),
+            )
+            self.conn.commit()
+        except sqlite3.IntegrityError as exc:
+            self.conn.rollback()
+            existing = self.conn.execute(
+                "SELECT * FROM provider_compensation_intents_v06 WHERE original_intent_digest=? AND status IN ('PENDING','APPROVED')",
+                (original_intent_digest,),
+            ).fetchone()
+            if existing and existing["compensation_intent_digest"] == semantic:
+                return dict(existing)
+            raise HardeningError("CFHS_CONFLICT", "Concurrent compensation intent conflict") from exc
         return self.get(intent.compensation_intent_id)
 
     def attach_approval(self, compensation_intent_id: str, request_id: str) -> dict[str, Any]:
@@ -167,6 +178,15 @@ class ProviderCompensationIntentLedger:
     def mark(self, compensation_intent_id: str, status: str) -> dict[str, Any]:
         if status not in {"PENDING", "APPROVED", "COMPENSATED", "FAILED"}:
             raise HardeningError("CFHS_INVALID_REQUEST", "Unsupported compensation intent state")
+        row = self.get(compensation_intent_id)
+        allowed = {
+            "PENDING": {"PENDING", "APPROVED", "FAILED"},
+            "APPROVED": {"APPROVED", "COMPENSATED", "FAILED"},
+            "COMPENSATED": {"COMPENSATED"},
+            "FAILED": {"FAILED"},
+        }
+        if status not in allowed.get(row["status"], {row["status"]}):
+            raise HardeningError("CFHS_CONFLICT", f"Compensation intent cannot transition {row['status']} → {status}")
         self.conn.execute(
             "UPDATE provider_compensation_intents_v06 SET status=?,updated_at=? WHERE compensation_intent_id=?",
             (status, utcnow().isoformat(), compensation_intent_id),
