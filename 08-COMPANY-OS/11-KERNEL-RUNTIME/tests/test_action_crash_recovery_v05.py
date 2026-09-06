@@ -58,8 +58,16 @@ class CrashRecoveryV05Tests(unittest.TestCase):
         )
         return intent, args
 
+    def mark_executing(self, intent):
+        self.coordinator.intents.set_status(
+            intent.intent_id,
+            "EXECUTING",
+            self.coordinator.recovery._now(self.conn),
+        )
+
     def stage_prepared(self, intent):
         self.coordinator.intents.register(intent)
+        self.mark_executing(intent)
         self.replay.reserve(intent.replay_nonce, intent.intent_digest())
         reservations = self.resources.reserve_many(intent.intent_id, intent.resource_requests)
         audit_id = self.audit.prepare(intent)
@@ -94,6 +102,7 @@ class CrashRecoveryV05Tests(unittest.TestCase):
     def test_crash_after_reservation_before_audit_releases_resources(self):
         intent, _ = self.make_intent(nonce="crash-before-audit")
         self.coordinator.intents.register(intent)
+        self.mark_executing(intent)
         self.replay.reserve(intent.replay_nonce, intent.intent_digest())
         self.resources.reserve_many(intent.intent_id, intent.resource_requests)
 
