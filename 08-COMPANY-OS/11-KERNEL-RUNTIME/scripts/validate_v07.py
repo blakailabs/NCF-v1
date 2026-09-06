@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 259
+EXPECTED_TARGETED_TESTS = 264
 TESTS = [
     "test_action_safety_v05",
     "test_action_crash_recovery_v05",
@@ -35,6 +35,7 @@ TESTS = [
     "test_remote_anchor_hardening_v07",
     "test_remote_anchor_config_v07",
     "test_recoverable_anchor_consumers_v07",
+    "test_server_v07_anchor_wiring",
 ]
 
 
@@ -101,6 +102,7 @@ def main() -> int:
             "fail-closed remote anchor runtime config",
             "same-head provider-action anchor recovery",
             "same-head authorization anchor recovery",
+            "canonical server anchor wiring",
         ],
         "reference_backend_production_ready": False,
         "production_identity_policy_available": True,
