@@ -3,7 +3,7 @@ name: Company OS Kernel CI
 on:
   push:
     branches:
-      - feature/company-kernel-action-safety-v0.5
+      - feature/company-kernel-live-adapter-safety-v0.6
   workflow_dispatch:
 
 jobs:
@@ -17,5 +17,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate Action Safety v0.5
-        run: PYTHONPATH=. python scripts/validate_v05.py
+      - name: Validate Live-Adapter Safety v0.6
+        run: PYTHONPATH=. python scripts/validate_v06.py
