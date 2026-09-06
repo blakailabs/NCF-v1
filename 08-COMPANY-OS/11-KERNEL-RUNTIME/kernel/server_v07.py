@@ -6,16 +6,17 @@ import os
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlparse
 
+from .distributed_compensation_hardening import TrustKernelV07DistributedCompensationFinalGate
+from .hardening import HardeningError
 from .remote_anchor import HTTPSAuditAnchorProvider
-from .runtime import CompanyKernel
+from .runtime import CompanyKernel, KernelError
 from .server_v02 import HardenedKernel
 from .server_v06 import _load_policy_keys
 from .server_v06_hardened import HardenedHandler
-from .transactional_provider_gate import TrustKernelV07TransactionalProviderGate
 
 
 class V07Handler(HardenedHandler):
-    kernel: TrustKernelV07TransactionalProviderGate = None  # type: ignore
+    kernel: TrustKernelV07DistributedCompensationFinalGate = None  # type: ignore
 
     def _translate_v7_path(self) -> str:
         original = self.path
@@ -36,7 +37,7 @@ class V07Handler(HardenedHandler):
                 {
                     "distributed_safety_version": "0.7",
                     "kernel_instance_id": self.kernel.kernel_instance_id,
-                    "canonical_provider_gate": "TrustKernelV07TransactionalProviderGate",
+                    "canonical_provider_gate": "TrustKernelV07DistributedCompensationFinalGate",
                     "production_credentials_allowed": False,
                     "provider_registry": sorted(self.kernel.providers),
                     "distributed_controls": [
@@ -50,8 +51,12 @@ class V07Handler(HardenedHandler):
                         "retryable safe abort",
                         "pre-execution takeover after fence expiry",
                         "transaction-coordinated provider lifecycle",
+                        "distributed compensation ownership epoch",
+                        "compensation provider idempotency",
+                        "compensation unknown-outcome reconciliation",
+                        "compensation reconciliation attempt history",
                     ],
-                    "compensation_status": "BLOCKED_PENDING_DISTRIBUTED_INTEGRATION",
+                    "compensation_status": "DISTRIBUTED_FENCED_AND_RECONCILABLE",
                     "audit_chain": self.kernel.hardened.audit_chain.verify(),
                     "anchor_chain": self.kernel.anchors.verify(),
                     "bootstrap": self.kernel.bootstrap.status(),
@@ -65,6 +70,23 @@ class V07Handler(HardenedHandler):
             self.path = original
 
     def do_POST(self):
+        path = urlparse(self.path).path
+        if path == "/v7/provider/compensation/reconcile":
+            try:
+                body = self._json()
+                ctx, _bearer = self._ctx_and_bearer()
+                return self._send(
+                    200,
+                    self.kernel.reconcile_provider_compensation(
+                        ctx,
+                        body["intent_id"],
+                        body["compensation_intent_id"],
+                    ),
+                )
+            except (HardeningError, KernelError) as exc:
+                return self._error(exc)
+            except Exception as exc:
+                return self._send(500, {"error": {"code": "CFHS_INTERNAL", "message": str(exc)}})
         original = self._translate_v7_path()
         try:
             return super().do_POST()
@@ -89,7 +111,7 @@ def main():
     core = CompanyKernel.from_file(args.state_dir, args.config)
     hardened = HardenedKernel(core, args.policy_dir, set(), False)
     anchor = HTTPSAuditAnchorProvider(args.remote_anchor_endpoint) if args.remote_anchor_endpoint else None
-    V07Handler.kernel = TrustKernelV07TransactionalProviderGate(
+    V07Handler.kernel = TrustKernelV07DistributedCompensationFinalGate(
         hardened,
         _load_policy_keys(args.policy_key_env),
         anchor,
@@ -109,11 +131,11 @@ def main():
     server = ThreadingHTTPServer((args.host, args.port), V07Handler)
     print(f"Company Kernel Distributed Safety v0.7 listening on http://{args.host}:{args.port}", flush=True)
     print(f"Kernel instance: {args.kernel_instance_id}", flush=True)
-    print("Canonical gate: TrustKernelV07TransactionalProviderGate", flush=True)
+    print("Canonical gate: TrustKernelV07DistributedCompensationFinalGate", flush=True)
     print("PREPARE: AUTHORITY ANCHORED + EXACT CAPACITY + OWNERSHIP FENCE COORDINATED", flush=True)
     print("Execution: CURRENT TRANSACTION EPOCH + PROVIDER STALE-FENCE ACCEPTANCE REQUIRED", flush=True)
     print("Reconciliation: SAME TRANSACTION ID + HIGHER FENCING EPOCH", flush=True)
-    print("Compensation: BLOCKED UNTIL DISTRIBUTED COMPENSATION SAFETY IS INTEGRATED", flush=True)
+    print("Compensation: INDEPENDENT AUTHORITY + NEW FENCING EPOCH + PROVIDER IDEMPOTENCY + RECONCILIATION", flush=True)
     print("Provider registry: SANDBOX ONLY. Production credentials/providers are rejected.", flush=True)
     server.serve_forever()
 
