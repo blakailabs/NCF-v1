@@ -3,29 +3,21 @@
 **Date:** 2026-09-06 UTC  
 **Branch:** `feature/company-kernel-live-adapter-safety-v0.6`
 
-This document supersedes only the GitHub account-access blocker recorded in `FINAL-CHECKPOINT-v0.6.md` and `PR-DRAFT-v0.6.md`. It does not change the v0.6 architecture or production-release decision.
+This document supersedes the GitHub account-access and CI-execution blockers recorded in the original checkpoint documents. It does not change the v0.6 architecture or the prohibition on production credentials/providers.
 
 ## GitHub account blocker resolved
 
-The GitHub account email has now been verified. Repository issue and pull-request creation are functioning again.
+The GitHub account email has been verified. Repository issue, pull-request and Actions execution are functioning normally again.
 
 ## CI blocker issue
 
-Created successfully:
+Issue #1 was created and then closed as resolved:
 
 ```text
 Issue #1
 CI blocker: GitHub Actions startup_failure creates zero jobs
 https://github.com/blakailabs/NCF-v1/issues/1
-```
-
-The issue tracks the existing GitHub Actions condition where runs terminate as:
-
-```text
-name: ""
-path: BuildFailed
-conclusion: startup_failure
-jobs: 0
+state: CLOSED / COMPLETED
 ```
 
 ## v0.6 review PR
@@ -46,26 +38,50 @@ base: feature/company-kernel-action-safety-v0.5
 state: OPEN / DRAFT
 ```
 
-The PR remains intentionally release-blocked and must not be treated as production-ready.
+The PR remains intentionally draft because production-safety blockers documented in `PREMORTEM-v0.6.md` are still in force.
 
-## Actions retry result
+## Clean v0.6 CI certification
 
-The previous zero-job workflow run `34004531882` cannot be retried through GitHub's failed-job rerun endpoint. GitHub returns:
+A fresh GitHub Actions run executed normally after email verification:
 
 ```text
-403
-This workflow run cannot be retried
+Run ID: 34006498158
+Workflow: Company OS Kernel CI
+Commit: 3b8cc7a4d7fc3bb62beccd875ef0fbeffbd87fcd
+Job: test
+Step: Validate Live-Adapter Safety v0.6
+Conclusion: SUCCESS
 ```
 
-This is consistent with the run having no executable jobs. Issue #1 remains open for the CI problem.
+Before this run, `scripts/validate_v06.py` was hardened so a zero exit code requires all of the following:
+
+```text
+compile_ok == true
+result.wasSuccessful() == true
+tests_run == 102
+```
+
+Therefore this successful run certifies the complete intended validation surface:
+
+```text
+102 targeted tests
+11 modules
+0 failing test result permitted
+exact test-count enforcement enabled
+includes frozen v0.5 regression coverage
+```
 
 ## Current decision
 
 ```text
 GitHub email/account blocker........ RESOLVED
-CI blocker issue.................... OPEN (#1)
-Draft architecture PR............... OPEN (#2)
+CI execution blocker................ RESOLVED
+CI blocker issue #1................. CLOSED / COMPLETED
+Draft architecture PR #2............ OPEN / DRAFT
+v0.6 clean CI certification......... PASS
+Canonical validator................. 102 tests / 11 modules / exact-count enforced
 Production provider release......... DENIED
 Production credentials.............. DENIED
-Canonical validator................. 102 tests / 11 modules, execution still uncertified
 ```
+
+The remaining blockers are production-architecture blockers, not v0.6 test-execution blockers.
