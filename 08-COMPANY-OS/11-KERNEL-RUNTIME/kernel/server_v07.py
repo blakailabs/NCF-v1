@@ -6,8 +6,8 @@ import os
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from .exact_authority import TrustKernelV07ExactAuthorityFinalGate
 from .hardening import HardeningError
+from .production_identity import TrustKernelV07ProductionIdentityFinalGate
 from .remote_anchor import HTTPSAuditAnchorProvider
 from .runtime import CompanyKernel, KernelError
 from .server_v02 import HardenedKernel
@@ -16,7 +16,7 @@ from .server_v06_hardened import HardenedHandler
 
 
 class V07Handler(HardenedHandler):
-    kernel: TrustKernelV07ExactAuthorityFinalGate = None  # type: ignore
+    kernel: TrustKernelV07ProductionIdentityFinalGate = None  # type: ignore
 
     def _translate_v7_path(self) -> str:
         original = self.path
@@ -37,7 +37,7 @@ class V07Handler(HardenedHandler):
                 {
                     "distributed_safety_version": "0.7",
                     "kernel_instance_id": self.kernel.kernel_instance_id,
-                    "canonical_provider_gate": "TrustKernelV07ExactAuthorityFinalGate",
+                    "canonical_provider_gate": "TrustKernelV07ProductionIdentityFinalGate",
                     "production_credentials_allowed": False,
                     "provider_registry": sorted(self.kernel.providers),
                     "distributed_controls": [
@@ -60,10 +60,16 @@ class V07Handler(HardenedHandler):
                         "versioned approval control-plane journal",
                         "exact minor-unit financial authority",
                         "exact-unit elevation scope",
+                        "trusted external identity policy",
+                        "MFA and ACR enforcement",
+                        "authentication freshness enforcement",
+                        "MFA-bound elevation approval",
+                        "S3 strong-provenance release",
                     ],
                     "compensation_status": "DISTRIBUTED_FENCED_AND_RECONCILABLE",
                     "approval_control_status": "FENCED_SESSION_PROVEN_AND_VERSIONED",
                     "financial_authority_status": "EXACT_MINOR_UNITS_WITH_EXACT_ELEVATION",
+                    "identity_policy": self.kernel.identity_policy_status(),
                     "reference_backend_production_ready": False,
                     "audit_chain": self.kernel.hardened.audit_chain.verify(),
                     "anchor_chain": self.kernel.anchors.verify(),
@@ -79,16 +85,58 @@ class V07Handler(HardenedHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path == "/v7/provider/compensation/reconcile":
+        special = {
+            "/v7/provider/compensation/reconcile",
+            "/v7/provider/compensation/approvals/request",
+            "/v7/provider/compensate",
+            "/v7/elevations/approve",
+        }
+        if path in special:
             try:
                 body = self._json()
-                ctx, _bearer = self._ctx_and_bearer()
+                ctx, bearer = self._ctx_and_bearer()
+                if path == "/v7/provider/compensation/reconcile":
+                    return self._send(
+                        200,
+                        self.kernel.reconcile_provider_compensation(
+                            ctx,
+                            body["intent_id"],
+                            body["compensation_intent_id"],
+                        ),
+                    )
+                if path == "/v7/provider/compensation/approvals/request":
+                    return self._send(
+                        201,
+                        self.kernel.request_provider_compensation_approval_with_session(
+                            ctx,
+                            bearer,
+                            body["intent_id"],
+                            body.get("arguments", {}),
+                            body.get("eligible_approvers", []),
+                            body.get("required_count"),
+                            int(body.get("ttl_seconds", 900)),
+                        ),
+                    )
+                if path == "/v7/provider/compensate":
+                    return self._send(
+                        200,
+                        self.kernel.compensate_provider_action_with_session(
+                            ctx,
+                            bearer,
+                            body["intent_id"],
+                            body.get("arguments", {}),
+                            body.get("sandbox_mode", "success"),
+                            body.get("compensation_intent_id"),
+                            body.get("compensation_approval_request_id"),
+                        ),
+                    )
                 return self._send(
                     200,
-                    self.kernel.reconcile_provider_compensation(
+                    self.kernel.approve_elevation_with_session(
                         ctx,
-                        body["intent_id"],
-                        body["compensation_intent_id"],
+                        bearer,
+                        body["elevation_id"],
+                        int(body.get("ttl_seconds", 600)),
                     ),
                 )
             except (HardeningError, KernelError) as exc:
@@ -119,7 +167,7 @@ def main():
     core = CompanyKernel.from_file(args.state_dir, args.config)
     hardened = HardenedKernel(core, args.policy_dir, set(), False)
     anchor = HTTPSAuditAnchorProvider(args.remote_anchor_endpoint) if args.remote_anchor_endpoint else None
-    V07Handler.kernel = TrustKernelV07ExactAuthorityFinalGate(
+    V07Handler.kernel = TrustKernelV07ProductionIdentityFinalGate(
         hardened,
         _load_policy_keys(args.policy_key_env),
         anchor,
@@ -139,7 +187,9 @@ def main():
     server = ThreadingHTTPServer((args.host, args.port), V07Handler)
     print(f"Company Kernel Distributed Safety v0.7 listening on http://{args.host}:{args.port}", flush=True)
     print(f"Kernel instance: {args.kernel_instance_id}", flush=True)
-    print("Canonical gate: TrustKernelV07ExactAuthorityFinalGate", flush=True)
+    print("Canonical gate: TrustKernelV07ProductionIdentityFinalGate", flush=True)
+    print(f"Identity policy mode: {V07Handler.kernel.production_identity_policy.mode.upper()}", flush=True)
+    print("Production identity: TRUSTED PROVIDER/ISSUER + MFA/ACR + AUTH FRESHNESS WHEN PRODUCTION MODE IS ENABLED", flush=True)
     print("Financial authority: EXACT MINOR UNITS + EXACT-UNIT ELEVATIONS", flush=True)
     print("Approvals: FENCED + SESSION-PROVEN + ATOMICALLY VERSIONED", flush=True)
     print("PREPARE: AUTHORITY ANCHORED + EXACT CAPACITY + OWNERSHIP FENCE COORDINATED", flush=True)
