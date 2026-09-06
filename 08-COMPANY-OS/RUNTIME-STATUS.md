@@ -1,140 +1,111 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-06 19:15 UTC  
-**Engineering branch:** `feature/company-kernel-distributed-safety-v0.7`  
-**Draft PR:** #3 — Company Kernel Distributed / Production Safety v0.7
+**Updated:** 2026-09-06 20:05 UTC  
+**Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
+**Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
 
 ## Project identity
 
 **Project:** Company Operating System  
 **Repository:** `blakailabs/NCF-v1`  
-**Intended repository slug:** `blakailabs/Company-Operating-System`  
+**Intended repository slug:** `blakailabs/Company-Operating-System`
 
 NCF remains the constitutional governance layer inside the broader Company Operating System.
 
-## Canonical v0.7 runtime
+## Merged baseline
+
+v0.7 was merged through PR #3 at:
 
 ```text
-kernel.server_v07
-→ TrustKernelV07RecoverableAnchorFinalGate
-→ TrustKernelV07ProductionIdentityFinalGate
-→ TrustKernelV07ExactAuthorityFinalGate
-→ TrustKernelV07ControlPlaneFinalGate
-→ TrustKernelV07DistributedCompensationFinalGate
-→ TrustKernelV07TransactionalProviderGate
-→ RecoverableSQLiteFencedStateCoordinator
+25382c018e8bf3cfe426940afc8f622b526ba191
 ```
 
-## Implemented safety layers
+The merged v0.7 baseline remains certified at **264 / 264** targeted tests.
+
+## Evidence-first doctrine
 
 ```text
-Business-object identity................ IMPLEMENTED
-Semantic replay safety.................. IMPLEMENTED
-Monotonic distributed fencing........... IMPLEMENTED
-Provider stale-fence protection......... IMPLEMENTED
-Transactional PREPARE................... IMPLEMENTED
-Forward outcome reconciliation.......... IMPLEMENTED
-Distributed compensation................ IMPLEMENTED
-Compensation reconciliation............. IMPLEMENTED
-Shared persistence contract............. IMPLEMENTED / REFERENCE ONLY
-Fenced approval control plane........... IMPLEMENTED
-Exact financial authority............... IMPLEMENTED
-Production identity/MFA policy.......... IMPLEMENTED / SANDBOX CONFIG
-Authenticated quorum anchor contract..... IMPLEMENTED / REFERENCE CRYPTO
-Same-head anchor recovery................ IMPLEMENTED
-Canonical server anchor wiring.......... IMPLEMENTED
-Canonical v0.7 certification............ 264 / 264 PASS
+Reality first.
+Structure second.
+Automation third.
+AI last.
 ```
 
-## Remote audit-anchor checkpoint
+Company OS distinguishes formal standards, authoritative implementation evidence, empirical research, proven production patterns and design heuristics. An analogy cannot become a kernel invariant merely because it is intuitive.
 
-The canonical v0.7 server no longer treats one unauthenticated HTTPS endpoint as a hardened remote-anchor path.
+## v0.8 — HA Persistence Safety
 
-Hardened reference mode requires:
+Production HA readiness requires four separate layers:
 
 ```text
-2+ HTTPS anchor endpoints
-+ explicit N-of-M quorum
-+ authenticated deterministic request binding
-+ per-endpoint signed receipt verification
-+ durable partial verified receipts
-+ replay-safe reconciliation
-+ same local audit-chain head across outage/retry
-+ runtime-only key environment references
+backend capability contract
++ deployment/topology evidence
++ observed behavioral probes
++ independent trusted attestation
 ```
 
-A legacy single endpoint is rejected as hardened mode. Partial configuration fails closed.
+### Certification lifecycle
 
-The dependency-free HMAC mechanism is intentionally a **reference/test authentication contract only**. It is not asymmetric, mTLS, HSM/KMS-backed, or production-certified trust.
+HA certification is time-bounded by the oldest supporting evidence, checked with backend-authoritative time, may be invalidated, cannot roll topology backward, cannot silently change cluster identity, and gates all shared-state operations.
 
-No raw secret values are committed to the repository.
+### Active behavioral evidence
 
-## Production identity / MFA
-
-Checked-in reference configuration remains:
+`ResilientHAConformanceProbeHarness` generates observed evidence for:
 
 ```text
-security.production_identity.mode = sandbox
-```
-
-When production mode is explicitly enabled in a controlled deployment, consequential human authority requires:
-
-```text
-verified external identity
-+ allowed provider and issuer
-+ required MFA/AMR
-+ allowed ACR when configured
-+ recent auth_time
-+ valid matching kernel session
-```
-
-This is enforced for action approvals, S3 release, compensation, and exact-authority elevation approval/use.
-
-No live production IdP is configured by this repository.
-
-## Exact financial authority
-
-Reference standing refund authority:
-
-```text
-USD $250.00 = 25,000 minor units
-```
-
-Sub-minor precision and non-finite values are rejected. Float-only legacy elevation cannot bypass the exact-unit boundary.
-
-## Shared persistence boundary
-
-The certified persistence contract requires:
-
-```text
-serializable transactions
-compare-and-swap
+controlled serializable conflict
+multi-client compare-and-swap
 monotonic fencing
-durable ordered journal
-multi-connection visibility
-synchronous durability
-authoritative shared time
-distributed quorum
+ordered journal / stale append rejection
+cross-client visibility
+durability after reconnect/failover
+authoritative time
+stale-owner rejection after takeover
+quorum-loss fail-closed behavior
+network-partition single-writer behavior
 ```
 
-The SQLite implementation validates the semantics but is explicitly **not production-ready** because it lacks distributed quorum and authoritative shared time.
+Quorum-loss and partition claims require an independent `HAChaosController`. Without it those probes are BLOCKED and production certification remains incomplete.
 
-## Certification
+### Digest-bound evidence assembly
 
-Canonical command:
-
-```bash
-cd 08-COMPANY-OS/11-KERNEL-RUNTIME
-PYTHONPATH=. python scripts/validate_v07.py
-```
-
-Final exact-count checkpoint before PR merge:
+`HAEvidenceAssembler` now combines two distinct observed sources:
 
 ```text
-Run ID: 34054241130
-Commit: 4c091e7a35894e6c4b7d18c1690401ff1756a77c
-Ran 264 tests in 6.411s
-264 / 264 PASS
+independent topology snapshot
++
+active probe report
+```
+
+The topology source must declare an accepted source class and provide a source receipt digest. Topology and probe backend identities must match and their observations must fall inside a bounded time window.
+
+The final evidence nonce is derived—not caller chosen—from:
+
+```text
+topology snapshot digest
++ topology-source receipt digest
++ probe-report digest
+```
+
+Blocked, failed or missing probes propagate into the assembled evidence and cannot become positive evidence by omission.
+
+Accepted topology source classes currently are:
+
+```text
+provider_control_plane
+cluster_consensus
+independent_observer
+```
+
+The assembled evidence is compatible with the existing independent-attestation and certification-lifecycle gates.
+
+## Current certification
+
+```text
+Run ID: 34056548949
+Commit: c1b92423093ac1266b14e25e7624a702fdc4c7ff
+Ran 325 tests in 21.091s
+325 / 325 PASS
 0 failures
 0 errors
 0 skipped
@@ -142,36 +113,34 @@ exact_test_count = true
 successful = true
 ```
 
-The 264-test surface includes all prior v0.5/v0.6/v0.7 regression tests plus production identity/MFA, exact authority, distributed compensation, shared-state conformance, fenced approval control, authenticated quorum anchoring, same-head anchor recovery, and canonical server anchor wiring.
-
-## Production posture
+Exact-count surface:
 
 ```text
-Production HA persistence backend....... PENDING
-Production asymmetric/HSM anchor trust.. PENDING
-Live production IdP integration......... NOT ENABLED
-Provider event/webhook reconciliation... PENDING
-Real provider test-mode adapter.......... NOT YET ENABLED
-Network partition/failover drills........ PENDING
+264  frozen v0.5-v0.7 regressions
+ 21  HA deployment-readiness tests
+ 15  HA certification lifecycle/runtime tests
+ 14  active HA probe-harness tests
+ 11  digest-bound HA evidence-pipeline tests
+---
+325 targeted tests
+```
+
+## Explicit non-claims
+
+```text
+Real production HA backend.............. NOT ENABLED
+Real topology control-plane adapter...... NOT ENABLED
+Real chaos/partition environment......... NOT ENABLED
+SQLite reference backend................ NOT PRODUCTION READY
+Production certification control plane.. REFERENCE ONLY
 Production credentials.................. DENIED
 Production write providers.............. DISABLED
+Live production IdP..................... NOT ENABLED
+Production asymmetric/HSM anchor trust.. PENDING
 ```
 
-## Release rule
+The passing reference tests certify contracts, evidence binding and detection logic—not a real distributed database cluster.
 
-No production write-capable provider is enabled until the applicable path has verified identity, authentic policy, exact authority where applicable, business identity, replay binding, exact capacity, current fencing, provider idempotency, strong approvals, externally authenticated audit anchoring, forward reconciliation, governed compensation, and a production shared/HA state backend.
+## Next v0.8 increment
 
-## Administrative rename
-
-Still pending:
-
-```text
-blakailabs/NCF-v1
-→ blakailabs/Company-Operating-System
-```
-
-See `/ADMIN-RENAME.md`.
-
-## Next clean PR
-
-After PR #3 is merged, the next engineering PR should start from the merged checkpoint and address the next unresolved production boundary rather than continuing to accumulate unrelated work in PR #3.
+Solve the **first-certification bootstrap trust problem** without circular trust. The first production HA certificate must not require an already-certified backend to authorize storing itself, and bootstrap must not become an unrestricted bypass. The planned boundary is a short-lived, one-time external certification-authority permit bound to one backend, cluster, topology epoch, evidence digest and certification digest.
