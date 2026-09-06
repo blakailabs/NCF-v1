@@ -3,10 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from kernel.exact_units import ExactResourceLedger, ExactUnitPolicy
 from kernel.hardening import HardeningError
 from kernel.live_adapter_safety import (
-    ExactResourceLedger,
-    ExactUnitPolicy,
     ProviderBoundCompensationRegistry,
     ProviderDefiniteFailure,
     ProviderOutcomeUnknown,
@@ -49,7 +48,7 @@ class LiveAdapterSafetyV06Tests(unittest.TestCase):
     def test_count_requires_whole_positive_units(self):
         policy = ExactUnitPolicy("messages", "count", "count")
         self.assertEqual(policy.to_units({"count": "3"}), 3)
-        for value in [3.5, "1.1", 0, -1, True, "NaN"]:
+        for value in [3.5, "1.1", 0, -1, True, "NaN", "Infinity"]:
             with self.subTest(value=value):
                 with self.assertRaises(HardeningError):
                     policy.to_units({"count": value})
@@ -72,6 +71,19 @@ class LiveAdapterSafetyV06Tests(unittest.TestCase):
         self.assertEqual(state["used_units"], 2500)
         self.assertEqual(state["reserved_units"], 0)
 
+    def test_compensation_reverses_committed_exact_units_once(self):
+        ledger = ExactResourceLedger(self.conn)
+        ledger.configure_pool("refund-usd", 10_000, "currency_minor", {"currency": "USD", "minor_exponent": 2})
+        reservation = ledger.reserve("intent-comp", "refund-usd", 1250)
+        ledger.transition(reservation["reservation_id"], "COMMITTED")
+        ledger.transition(reservation["reservation_id"], "COMPENSATED", "provider-comp-123")
+        state = ledger.pool_state("refund-usd")
+        self.assertEqual(state["used_units"], 0)
+        self.assertEqual(ledger.reservation(reservation["reservation_id"])["status"], "COMPENSATED")
+        same = ledger.transition(reservation["reservation_id"], "COMPENSATED", "provider-comp-123")
+        self.assertEqual(same["status"], "COMPENSATED")
+        self.assertEqual(ledger.pool_state("refund-usd")["used_units"], 0)
+
     def test_exact_resource_limit_and_unit_definition_are_immutable(self):
         ledger = ExactResourceLedger(self.conn)
         ledger.configure_pool("refund-usd", 1000, "currency_minor", {"currency": "USD", "minor_exponent": 2})
@@ -82,6 +94,15 @@ class LiveAdapterSafetyV06Tests(unittest.TestCase):
             ledger.configure_pool("refund-usd", 1000, "count", {})
         with self.assertRaises(HardeningError):
             ledger.configure_pool("refund-usd", 800, "currency_minor", {"currency": "USD", "minor_exponent": 2})
+
+    def test_same_intent_exact_reservation_is_idempotent(self):
+        ledger = ExactResourceLedger(self.conn)
+        ledger.configure_pool("refund-usd", 5000, "currency_minor", {"currency": "USD", "minor_exponent": 2})
+        first = ledger.reserve("semantic-intent", "refund-usd", 500)
+        second = ledger.reserve("semantic-intent", "refund-usd", 500)
+        self.assertEqual(first["reservation_id"], second["reservation_id"])
+        with self.assertRaises(HardeningError):
+            ledger.reserve("semantic-intent", "refund-usd", 600)
 
     def test_provider_same_key_same_request_is_idempotent(self):
         provider = SQLiteSandboxProvider(self.conn, "sandbox-payments")
