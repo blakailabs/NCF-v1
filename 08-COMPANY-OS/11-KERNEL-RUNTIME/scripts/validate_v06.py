@@ -20,6 +20,7 @@ TESTS = [
     "test_v06_trust_bindings",
     "test_provider_action_hardening_v06",
     "test_server_v06_integration",
+    "test_provider_execution_gate_v06",
 ]
 
 
@@ -48,6 +49,7 @@ def main() -> int:
         "successful": compile_ok and result.wasSuccessful(),
         "sandbox_only": True,
         "production_credentials_allowed": False,
+        "execution_gate": "semantic replay + anchored authorization + anchored provider audit",
     }
     print("\nV0.6_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
     return 0 if summary["successful"] else 1
