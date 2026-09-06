@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 205
+EXPECTED_TARGETED_TESTS = 214
 TESTS = [
     # v0.5 regression surface
     "test_action_safety_v05",
@@ -32,6 +32,7 @@ TESTS = [
     "test_transactional_provider_gate_v07",
     "test_distributed_compensation_v07",
     "test_shared_state_backend_v07",
+    "test_control_plane_fencing_v07",
 ]
 
 
@@ -82,6 +83,9 @@ def main() -> int:
             "shared backend monotonic fencing contract",
             "shared backend ordered journal contract",
             "atomic fenced shared mutation contract",
+            "fenced approval mutation",
+            "atomic approval plus session provenance",
+            "versioned approval control-plane journal",
         ],
         "reference_backend_production_ready": False,
     }
