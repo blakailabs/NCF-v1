@@ -99,6 +99,9 @@
           "name":"payments.refund.reverse",
           "side_effect_class":"S3",
           "idempotency_required":true,
+          "action_safety":{
+            "minimum_approvals":2
+          },
           "live_adapter_safety":{
             "provider_id":"sandbox-payments",
             "sandbox_only":true
