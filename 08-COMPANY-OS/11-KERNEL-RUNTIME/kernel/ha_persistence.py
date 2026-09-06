@@ -264,9 +264,8 @@ class HAPersistenceCertifier:
                 failures.append("read_quorum_invalid")
             elif evidence.write_quorum + evidence.read_quorum <= voter_count:
                 failures.append("read_write_quorum_intersection_not_proven")
-        else:
-            if evidence.read_quorum < 1:
-                failures.append("linearizable_read_path_missing")
+        elif evidence.read_quorum < 1:
+            failures.append("linearizable_read_path_missing")
 
         if not evidence.synchronous_commit:
             failures.append("synchronous_commit_disabled")
@@ -299,10 +298,11 @@ class HAPersistenceCertifier:
                 failures.append(f"probe_stale:{name}")
         return failures
 
-    @staticmethod
     def _attestation_failures(
+        self,
         evidence: HADeploymentEvidence,
         verifier: DeploymentEvidenceVerifier | None,
+        now: datetime,
     ) -> tuple[VerifiedDeploymentAttestation | None, list[str]]:
         if verifier is None:
             return None, ["trusted_attestation_missing"]
@@ -322,6 +322,16 @@ class HAPersistenceCertifier:
             "independent_observer",
         }:
             failures.append("trusted_attestation_class_invalid")
+        try:
+            verified_at = self._parse_time(attestation.verified_at)
+        except HardeningError:
+            failures.append("trusted_attestation_time_invalid")
+        else:
+            age = (now - verified_at).total_seconds()
+            if age < -60:
+                failures.append("trusted_attestation_time_in_future")
+            elif age > self.max_evidence_age_seconds:
+                failures.append("trusted_attestation_stale")
         return attestation, failures
 
     def certify(
@@ -336,7 +346,7 @@ class HAPersistenceCertifier:
         capability_result = certify_backend(capabilities)
         current = (now or utcnow()).astimezone(timezone.utc)
         structural_failures = self._structural_failures(capabilities, evidence, current)
-        attestation, attestation_failures = self._attestation_failures(evidence, verifier)
+        attestation, attestation_failures = self._attestation_failures(evidence, verifier, current)
         all_failures = tuple(
             dict.fromkeys(
                 list(capability_result.missing_requirements)
