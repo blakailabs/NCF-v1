@@ -22,6 +22,7 @@ TESTS = [
     "test_server_v06_integration",
     "test_provider_execution_gate_v06",
     "test_provider_compensation_gate_v06",
+    "test_provider_replay_restart_v06",
 ]
 
 
@@ -43,6 +44,7 @@ def main() -> int:
         "milestone": "Company Kernel Live-Adapter Safety v0.6",
         "compile_ok": compile_ok,
         "test_modules": TESTS,
+        "expected_targeted_tests": 102,
         "tests_run": result.testsRun,
         "failures": len(result.failures),
         "errors": len(result.errors),
@@ -50,7 +52,7 @@ def main() -> int:
         "successful": compile_ok and result.wasSuccessful(),
         "sandbox_only": True,
         "production_credentials_allowed": False,
-        "execution_gate": "semantic replay + anchored authorization + anchored provider audit",
+        "release_gate": "replay pre-reservation + anchored authorization + anchored provider audit",
         "compensation_gate": "separate S3 intent + multi-party session provenance + anchored authorization",
     }
     print("\nV0.6_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
