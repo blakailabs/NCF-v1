@@ -2,12 +2,13 @@
 
 **Project:** Company Operating System  
 **Branch:** `feature/company-kernel-distributed-safety-v0.7`  
-**Status:** active engineering milestone; production credentials/providers remain disabled
+**Status:** final PR #3 checkpoint; production credentials/providers remain disabled
 
 ## Canonical runtime
 
 ```text
 kernel.server_v07
+→ TrustKernelV07RecoverableAnchorFinalGate
 → TrustKernelV07ProductionIdentityFinalGate
 → TrustKernelV07ExactAuthorityFinalGate
 → TrustKernelV07ControlPlaneFinalGate
@@ -16,18 +17,12 @@ kernel.server_v07
 → RecoverableSQLiteFencedStateCoordinator
 ```
 
-Canonical identity-policy server promotion:
-
-```text
-8f11e0f0d3021055b8378a34c597553e80a68452
-```
-
 ## Canonical consequential-action path
 
 ```text
 BusinessObjectIdentity
 → semantic replay binding
-→ authenticated/session-proven approvals
+→ session-proven approvals
 → production authentication-class checks when enabled
 → authorization decision
 → anchored authorization evidence
@@ -36,72 +31,120 @@ BusinessObjectIdentity
     ├── exact resource capacity
     ├── current ownership fence
     └── versioned transaction journal
-→ provider PREPARE using same exact reservation
+→ provider PREPARE using the same reservation
 → transaction/fence revalidation
 → provider/gateway stale-fence guard
 → provider execution
 → terminal state OR forward reconciliation
-→ independently governed compensation when required
+→ independently governed compensation where required
 → compensation identity + new fence epoch
 → provider-idempotent reversal
 → COMPENSATED OR compensation reconciliation
 ```
 
-## Distributed safety already certified
+## Certified v0.7 controls
 
-v0.7 includes business-object identity, semantic replay binding, monotonic fencing, provider stale-fence rejection, transaction-coordinated PREPARE, exact-resource reservation, versioned transaction journals, forward outcome reconciliation, distributed compensation, compensation reconciliation and attempt history, a shared persistence contract, a fenced approval control plane, and exact minor-unit financial authority.
+v0.7 implements and tests:
 
-## Production identity / MFA authentication class
+- versioned business-object identity independent of replay nonce;
+- semantic replay protection;
+- monotonic fencing and provider stale-token rejection;
+- transaction-coordinated exact-capacity PREPARE;
+- restart/takeover semantics under higher fencing epochs;
+- forward unknown-outcome reconciliation;
+- separately governed distributed compensation;
+- compensation unknown-outcome reconciliation and retry history;
+- shared-state CAS/fencing/journal contract;
+- fenced/versioned approval mutation with atomic session provenance;
+- exact minor-unit financial authority and exact-unit elevations;
+- production external-identity/MFA policy contract;
+- authenticated quorum audit-anchor reference contract;
+- durable partial anchor receipts and replay-safe quorum reconciliation;
+- same-head provider-action and authorization anchor recovery;
+- fail-closed canonical server wiring.
 
-The canonical runtime now includes an explicit production authentication-class policy in `kernel/production_identity.py`.
+## Production identity / MFA
 
-The checked-in reference config intentionally remains:
+The repository default remains:
 
 ```text
 security.production_identity.mode = sandbox
 ```
 
-This means the code contains and tests the production enforcement contract without claiming that a real production identity provider is connected.
+Production-mode policy requires allowed external provider/issuer, MFA/AMR, acceptable ACR where configured, fresh authentication time and a live matching kernel session.
 
-When `mode = production`, consequential human authority requires:
+Weak or legacy approval/elevation provenance is rechecked at release and fails closed.
+
+No live production IdP or production identity credentials are committed.
+
+## Exact financial authority
+
+Reference standing refund authority:
 
 ```text
-verified external identity provenance
-+ allowed provider ID
-+ allowed issuer
-+ required AMR factors (for example MFA)
-+ allowed ACR when configured
-+ auth_time within configured freshness window
-+ valid non-revoked kernel session bound to the same principal
+USD $250.00 = 25,000 minor units
 ```
 
-### Approval mutation
+```text
+$250.00   → ALLOW
+$250.01   → ELEVATION_REQUIRED
+$250.001  → REJECT
+NaN/Inf   → REJECT
+float-only elevation → cannot bypass exact authority
+```
 
-In production mode, kernel-session-only approval is rejected. The external identity must satisfy provider, issuer, MFA/ACR and freshness policy **before** the fenced approval mutation is committed.
+## Authenticated quorum audit anchoring
 
-### S3 release defense in depth
+The hardened reference anchor contract uses deterministic request identity and N-of-M endpoint confirmation.
 
-S3 PREPARE rechecks all counted approval provenance. This blocks weak approvals that might have been injected through a lower-level/legacy path before any distributed transaction/fence/resource PREPARE occurs.
+```text
+local chain head H
+→ canonical metadata digest
+→ deterministic anchor request ID
+→ authenticated request envelope
+→ endpoint A signed receipt
+→ endpoint B signed receipt
+→ ...
+→ quorum confirmation
+```
 
-### Compensation
+Properties:
 
-Production-mode compensation requires strong identity for the requester/executor and revalidates the compensation approval provenance before release.
+```text
+single endpoint hardened mode........ REJECTED
+partial runtime configuration........ FAIL CLOSED
+wrong-head receipt................... NOT COUNTED
+bad/untrusted signature.............. NOT COUNTED
+tampered metadata.................... REJECTED
+partial verified receipts............ DURABLE
+retry................................ MISSING ENDPOINTS ONLY
+same semantic request................ SAME REQUEST ID
+same-head retry after outage......... REQUIRED
+```
 
-### Elevations
+Runtime key values come only from named environment variables. The repository stores no anchor secrets.
 
-Production exact-authority elevation approval is session-aware and records an immutable assurance digest. A direct/core-only approved elevation without the v0.7 identity record is not trusted for production exact-authority release.
+The current HMAC implementation is deliberately **reference/test cryptography**. Production still requires asymmetric workload identity/mTLS/HSM/KMS-backed trust and appropriate key lifecycle controls.
 
-### Authentication freshness
+## Same-head recovery
 
-`auth_time` is mandatory in production mode. Authentication older than the configured maximum produces `CFHS_REAUTHENTICATION_REQUIRED`; missing/invalid identity class produces `CFHS_AUTHENTICATION_CLASS_REQUIRED`; insufficient MFA/ACR produces `CFHS_MFA_REQUIRED`.
+A failed external anchor no longer causes the consumer to append a fresh local event on retry.
 
-### Identity privacy boundary
+```text
+append semantic transition once
+→ persist pending checkpoint {event_digest, audit_head_hash, metadata}
+→ external anchor unavailable
+→ action fails closed
+→ restart/retry
+→ reuse exact original audit_head_hash
+→ reconcile anchor confirmation
+```
 
-No raw bearer or ID token is stored by the production-identity assurance layer. Policy status exposes only safe metadata and digests.
+This is implemented for both provider-action transitions and provider-authorization evidence.
 
-## Shared persistence boundary
+## Shared persistence contract
 
-`kernel/shared_state_backend.py` defines the production cross-host semantics:
+A production cross-host backend must preserve:
 
 ```text
 serializable transactions
@@ -114,28 +157,9 @@ authoritative shared time
 distributed quorum
 ```
 
-The SQLite implementation is a semantic reference only and explicitly fails production certification for authoritative shared time and distributed quorum.
+SQLite is the semantic reference and remains not production-certified.
 
-## Exact financial authority
-
-Reference standing refund authority:
-
-```text
-USD $250.00 = 25,000 minor units
-```
-
-```text
-$250.00 → ALLOW
-$250.01 → ELEVATION_REQUIRED
-sub-minor precision → REJECT
-NaN/infinity → REJECT
-legacy float-only elevation → cannot bypass exact authority
-matching exact-unit + trusted elevation → may ALLOW within elevated ceiling
-```
-
-## Runnable API
-
-Reference server:
+## Runnable server
 
 ```bash
 python -m kernel.server_v07 \
@@ -145,70 +169,36 @@ python -m kernel.server_v07 \
   --kernel-instance-id kernel-a
 ```
 
-Default port: `8048`.
+Default mode uses the local reference anchor.
 
-Identity-aware v0.7 endpoints include:
+Authenticated remote quorum reference mode requires repeated endpoint/key bindings plus a quorum and runtime request-key reference. Hardened remote mode requires at least two HTTPS endpoints.
 
-```text
-POST /v7/provider/compensation/approvals/request
-POST /v7/provider/compensate
-POST /v7/provider/compensation/reconcile
-POST /v7/elevations/approve
-```
-
-The regular action approval endpoint is inherited through the v7→v6 compatibility router and reaches the canonical identity-aware `approve_action_with_session` method.
-
-## v0.7 certification
-
-Canonical validator:
+## Final PR #3 certification
 
 ```bash
 cd 08-COMPANY-OS/11-KERNEL-RUNTIME
 PYTHONPATH=. python scripts/validate_v07.py
 ```
 
-Exact-count surface:
-
 ```text
-222  prior v0.5/v0.6/v0.7 regression + distributed-safety tests
- 11  production identity / MFA adversarial tests
----
-233 targeted tests
-```
-
-Candidate certification:
-
-```text
-Run ID: 34048498715
-Commit: 731ba9b8ac03a3ca090dd71d45d1daddf54f9687
-233 / 233 PASS
+Run ID: 34054241130
+Commit: 4c091e7a35894e6c4b7d18c1690401ff1756a77c
+Ran 264 tests in 6.411s
+264 / 264 PASS
 0 failures
 0 errors
 0 skipped
 exact_test_count = true
+successful = true
 ```
 
-Canonical server certification:
-
-```text
-Run ID: 34048565980
-Commit: 8f11e0f0d3021055b8378a34c597553e80a68452
-Ran 233 tests in 7.084s
-233 / 233 PASS
-0 failures
-0 errors
-0 skipped
-exact_test_count = true
-```
-
-## Current production decision
+## Release posture
 
 ```text
 Business-object identity................ IMPLEMENTED
 Semantic replay safety.................. IMPLEMENTED
-Monotonic fencing....................... IMPLEMENTED
-Provider stale-fence guard.............. IMPLEMENTED
-Atomic transaction PREPARE.............. IMPLEMENTED
+Distributed fencing..................... IMPLEMENTED
+Transactional PREPARE................... IMPLEMENTED
 Forward reconciliation.................. IMPLEMENTED
 Distributed compensation................ IMPLEMENTED
 Compensation reconciliation............. IMPLEMENTED
@@ -216,26 +206,18 @@ Shared persistence contract............. IMPLEMENTED / REFERENCE ONLY
 Fenced approval control plane........... IMPLEMENTED
 Exact financial authority............... IMPLEMENTED
 Production identity/MFA policy.......... IMPLEMENTED / SANDBOX CONFIG
-Canonical v0.7 certification............ 233 / 233 PASS
-Production HA persistence backend....... PENDING
-Live production IdP integration......... NOT ENABLED
-Remote audit-anchor production hardening PENDING
-Provider event/webhook reconciliation... PENDING
+Authenticated quorum anchor contract..... IMPLEMENTED / REFERENCE CRYPTO
+Same-head anchor recovery................ IMPLEMENTED
+Canonical v0.7 certification............ 264 / 264 PASS
+Production HA backend................... PENDING
+Production asymmetric/HSM anchor trust.. PENDING
+Live production IdP..................... NOT ENABLED
+Provider webhook/event reconciliation... PENDING
+Real provider test mode................. NOT YET ENABLED
 Production credentials.................. DENIED
 Production write providers.............. DISABLED
-Real provider test mode................. NOT YET ENABLED
 ```
 
-## Remaining v0.7 work
+## Next clean PR
 
-1. harden remote audit anchoring for authenticated, replay-safe, multi-endpoint operation and receipt reconciliation;
-2. implement/certify a real shared/HA persistence backend preserving the tested contract across hosts;
-3. extend shared ownership/versioning to additional control-plane mutations where necessary;
-4. integrate a real workforce IdP later in a controlled environment without repository credentials;
-5. add provider webhook/event reconciliation;
-6. validate one real provider's identity/fencing/idempotency semantics in test mode only;
-7. execute migration, network-partition, failover and incident drills.
-
-## Next v0.7 increment
-
-Harden the **remote audit-anchor production contract** while preserving all 233 currently certified tests. No production credentials or live provider writes are authorized by this work.
+After PR #3 merges, continue from the merged checkpoint in a new branch/PR. The next PR should focus on one remaining production boundary—preferably the production shared/HA persistence backend—rather than expanding PR #3 further.
