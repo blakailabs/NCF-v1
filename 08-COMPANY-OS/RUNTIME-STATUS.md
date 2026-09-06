@@ -1,7 +1,7 @@
 # Company Operating System Runtime Status
 
 **Updated:** 2026-09-05 / 2026-09-06 UTC  
-**Current branch:** `feature/company-kernel-action-safety-v0.5`
+**Current branch:** `feature/company-kernel-live-adapter-safety-v0.6`
 
 ## Canonical project identity
 
@@ -24,32 +24,16 @@ NCF constitutional governance
 → Kernel Trust Layer v0.3
 → Kernel Trust Hardening v0.4
 → Kernel Action Safety v0.5
+→ Kernel Live-Adapter Safety v0.6
 ```
 
 ## v0.1 — runnable kernel
 
-Implemented:
-
-- durable principal/process/checkpoint/audit state;
-- default-deny capabilities;
-- contextual amount/resource limits;
-- `ALLOW`, `DENY`, `ELEVATION_REQUIRED`;
-- narrow human-approved elevation;
-- mock S2/S3 devices;
-- idempotency/resource ceilings;
-- checkpoint/restart recovery.
+Implemented durable principal/process/checkpoint/audit state, default-deny capabilities, contextual limits, human-approved elevation, mock devices, idempotency/resource ceilings and checkpoint/restart recovery.
 
 ## v0.2 — authenticated hardening
 
-Implemented:
-
-- opaque kernel sessions;
-- session hashing/expiration/revocation;
-- process ownership/supervision binding;
-- restrictive-only policy overlay;
-- tamper-evident audit chain;
-- secret lease abstraction;
-- sandboxed S0 read-only HTTP adapter.
+Implemented opaque hashed kernel sessions, expiration/revocation, process ownership/supervision, restrictive policy overlay, tamper-evident audit chain, secret lease abstraction and sandboxed S0 read-only HTTP.
 
 Last clean GitHub Actions execution:
 
@@ -62,20 +46,7 @@ Secret scan............ PASS
 
 ## v0.3 — trust provenance
 
-Implemented:
-
-- canonical internal project identity: **Company Operating System**;
-- signed restrictive policy-package contract;
-- atomic activation;
-- session rotation;
-- process capability bounds;
-- durable delegation proofs;
-- provider-neutral vault interface;
-- durable event/queue ownership semantics;
-- independent audit-anchor abstraction;
-- GitHub read-only provider with no write API;
-- one-time bootstrap endpoint;
-- threat model/adversarial test catalog.
+Implemented signed restrictive policy-package contracts, atomic activation, session rotation, capability bounds, durable delegation proofs, provider-neutral vault interface, durable event/queue ownership, independent audit anchors, GitHub read-only provider, one-time bootstrap and threat-model/adversarial test catalog.
 
 Independent reference harness:
 
@@ -85,25 +56,9 @@ Trust primitive checks........ 11 / 11 PASS
 
 ## v0.4 — trust hardening
 
-Implemented:
+Implemented restart-safe one-time bootstrap, atomic bootstrap/session issuance, signed-policy persistence and rollback protection, recursive delegation verification, delegation/process tamper detection, expiring queue claims/dead-letter handling, OIDC identity-broker contract, remote HTTPS audit-anchor contract, external HTTPS vault provider and runnable v0.4 wiring.
 
-- durable restart-safe one-time bootstrap;
-- atomic bootstrap completion/session issuance;
-- persistent signed-policy contents;
-- semantic-version rollback protection;
-- same-version substitution rejection;
-- recursive delegation-chain verification;
-- delegation/process-bound tamper detection;
-- authorization-time provenance verification;
-- expiring event claims/dead-letter handling;
-- external OIDC identity broker contract;
-- atomic OIDC nonce/session issuance;
-- remote HTTPS audit-anchor contract;
-- external HTTPS vault provider;
-- runnable v0.4 server;
-- restart/rollback/delegation/identity/anchor/vault tests committed.
-
-Acceptance:
+Acceptance remains:
 
 ```text
 IMPLEMENTED
@@ -114,115 +69,215 @@ PRODUCTION WRITE RELEASE BLOCKED
 
 ## v0.5 — Action Safety
 
-Implemented on `feature/company-kernel-action-safety-v0.5`:
+Frozen branch:
 
-### Action intent and replay
+```text
+feature/company-kernel-action-safety-v0.5
+```
 
-- stable semantic action-intent digest;
-- raw argument digest rather than raw argument persistence in the intent envelope;
+Implemented:
+
+- stable semantic action intent;
 - replay nonce bound to semantic action;
-- committed replay returns without invoking the provider again;
-- nonce reuse with a different semantic action is rejected.
-
-### Kernel-owned resource safety
-
-- durable resource pools;
-- atomic multi-resource reservation;
-- reservation commit/release;
-- hard-limit enforcement;
-- operation-level `action_safety` policy;
-- reservation amount derived by the kernel from the bound operation and action arguments;
-- caller under-reservation/substitution rejected;
-- resource safety profile frozen into the action binding.
-
-### Approval safety
-
-- operation/kernel-owned minimum approval floor;
-- S3 refund example requires two approvals;
-- caller cannot lower the floor to zero;
+- atomic resource reservation/commit/release;
+- kernel-derived resource requirements;
+- operation-owned approval floors;
 - explicit eligible approvers;
-- requester self-approval rejected;
-- duplicate approval does not increase the count;
-- otherwise-powerful principal does not count unless explicitly eligible.
+- requester self-approval rejection;
+- compensation requirements;
+- fail-closed audit PREPARE;
+- durable execution-start marker;
+- PENDING/EXECUTING lifecycle;
+- crash recovery and conservative `UNKNOWN_SIDE_EFFECT` handling;
+- device/provider/safety-profile binding;
+- simulation-only consequential provider;
+- deterministic v0.5 validator.
 
-### Compensation safety
-
-- S2 compensation-plan requirement;
-- S1/S2 compensation callback requirement;
-- compensation success releases conservative resource reservation;
-- compensation failure creates explicit failure/uncertainty state.
-
-### Fail-closed action audit
-
-- durable action `PREPARED` record before provider invocation;
-- durable execution-start marker immediately before provider callback;
-- audit result commit after provider result;
-- audit evidence can recover interrupted resource/replay bookkeeping.
-
-### Crash consistency
-
-- durable action-intent index;
-- `PENDING → EXECUTING → terminal` lifecycle;
-- pending intents survive restart without being treated as failed execution;
-- startup recovery scans only in-flight `EXECUTING` actions;
-- crash before provider invocation releases resources safely;
-- crash after provider invocation begins becomes `UNKNOWN_SIDE_EFFECT` when no trustworthy result exists;
-- audit-committed actions repair unfinished resource/replay bookkeeping;
-- replay state can be repaired from committed audit evidence after resource/replay commit interruption.
-
-### Device/provider binding
-
-Action intent is durably bound to:
+Validation surface:
 
 ```text
-device_id
-operation
-resource
-side-effect class
-provider
-operation action-safety profile
+34 targeted tests across 4 v0.5 modules
 ```
 
-Device/provider/policy substitution after intent creation is rejected.
+The milestone is simulation-only and does not authorize a live provider.
 
-### Simulation runtime
+## v0.6 — Live-Adapter Safety
 
-`server_v05.py` provides the full Action Safety path using a simulated consequential adapter only.
+Current branch:
 
 ```text
-agent intent
-→ independent approvals
-→ v0.4 trust authorization
-→ replay check
-→ resource reservation
-→ audit prepare
-→ simulation invocation
-→ audit/resource/replay commit
+feature/company-kernel-live-adapter-safety-v0.6
 ```
 
-No live business side effect is performed.
+### Canonical hardened runtime
 
-### v0.5 validation surface
+```text
+kernel.server_v06_hardened
+→ TrustKernelV06ReleaseGate
+```
+
+`server_v06.py` remains the lower-level provider-shaped reference runtime. The hardened launcher is the canonical v0.6 safety entrypoint.
+
+### Exact economic units
+
+Implemented integer-only economic accounting:
+
+```text
+$10.25 USD → 1025 minor units
+```
+
+No rounding is permitted. NaN, infinity, zero/negative use, fractional count resources, sub-minor currency precision and out-of-range integer units are rejected.
+
+Committed exact usage can be reversed only with provider compensation evidence.
+
+### Provider-side idempotency
+
+The sandbox provider persists a stable idempotency key and supports lookup:
+
+```text
+same key + same request → original provider action
+same key + changed request → CFHS_IDEMPOTENCY_CONFLICT
+```
+
+Provider idempotency survives restart.
+
+### Provider reconciliation
+
+Provider outcomes are separated into:
+
+```text
+definite pre-persistence failure
+provider-confirmed success
+unknown transport outcome
+compensated
+```
+
+Unknown outcome enters `RECONCILIATION_REQUIRED`; a second provider execute is blocked.
+
+Provider lookup resolves the action to committed, not-executed or compensated truth.
+
+### Post-provider failure hardening
+
+Any generic exception after provider execution begins is treated as potentially consequential unless the provider gives a definite pre-persistence failure signal.
+
+Fault models cover:
+
+- provider success then audit failure;
+- provider success then exact-resource commit failure;
+- provider persistence then unexpected client exception;
+- unexpected client failure before provider persistence.
+
+The system reconciles from provider truth instead of retrying blindly.
+
+### Session-proven approvals
+
+Every counted S3 approval must have authenticated kernel-session provenance.
+
+Approval evidence binds:
+
+```text
+session id
+principal id
+session lifetime
+authentication class
+session evidence digest
+optional external identity/provider digest
+```
+
+Revoked or expired sessions cannot provide approval evidence. Raw approval rows without provenance do not release v0.6 provider actions.
+
+### Anchored authorization evidence
+
+Before provider preparation, the release authority is bound immutably to:
+
+- semantic intent;
+- actor/process;
+- matched capability/policy;
+- constraints;
+- approval request;
+- multi-party approval provenance digest.
+
+The authorization checkpoint is appended to the tamper-evident chain and externally anchored before the provider-action PREPARE path proceeds.
+
+### Anchored provider audit
+
+Provider PREPARE and subsequent provider-action transitions are also chained and anchored.
+
+The anchor receipt must confirm the exact audit-chain head supplied by the kernel. Missing/unavailable/mismatched anchor receipts fail closed.
+
+### Semantic kernel replay
+
+v0.6 adds a provider replay state machine independent of provider idempotency.
+
+The nonce is now reserved **before provider-intent persistence**:
+
+```text
+RESERVED
+→ PENDING
+→ PREPARED
+→ COMMITTED / FAILED_NOT_EXECUTED / RECONCILIATION_REQUIRED
+→ COMMITTED / FAILED_NOT_EXECUTED / COMPENSATED
+```
+
+Same nonce + different semantic action is rejected.
+
+Startup recovery handles the crash window between durable intent creation and replay attachment.
+
+### Governed S3 compensation
+
+The pre-freeze review determined that rollback must be governed as a consequential action itself.
+
+The hardened runtime requires:
+
+```text
+committed original provider action
+→ separately authorized compensation requester
+→ immutable compensation intent
+→ two independent approvers
+→ session provenance for each approval
+→ separate compensation authorization
+→ anchored compensation authority evidence
+→ provider idempotent compensation
+→ exact resource reversal
+→ original replay state COMPENSATED
+```
+
+A principal lacking base compensation authority cannot even open the approval workflow.
+
+### Sandbox-only provider registry
+
+Current provider registry:
+
+```text
+sandbox-payments
+```
+
+Production provider credentials are not accepted.
+
+### v0.6 validation surface
 
 Canonical validator:
 
 ```bash
 cd 08-COMPANY-OS/11-KERNEL-RUNTIME
-PYTHONPATH=. python scripts/validate_v05.py
+PYTHONPATH=. python scripts/validate_v06.py
 ```
 
-It compiles the runtime/tests and executes four targeted suites containing 34 Action Safety test methods:
+Expected targeted surface:
 
 ```text
-test_action_safety_v05
-test_action_crash_recovery_v05
-test_action_reconciliation_v05
-test_server_v05_integration
+102 tests
+11 modules
+includes frozen v0.5 regression suites
 ```
+
+The test design covers exact units, provider idempotency, provider lookup/reconciliation, post-provider failures, approval provenance, audit anchoring, kernel replay, replay crash recovery, end-to-end provider execution and governed S3 compensation.
+
+**Execution status:** the test surface is committed but is not being represented as passed because GitHub Actions is still failing before job creation and the external container could not resolve GitHub for a clean clone.
 
 ## Current GitHub Actions blocker
 
-GitHub is replacing workflow executions with a synthetic run:
+GitHub continues to create synthetic runs with:
 
 ```text
 name: ""
@@ -231,57 +286,77 @@ conclusion: startup_failure
 jobs: 0
 ```
 
-The condition persists after the branch was reduced to a single minimal workflow and canonical validation command. The run fails before checkout, runner assignment, Python setup, compilation, or test execution.
+The failure occurs before checkout, runner assignment, Python setup, compilation or tests.
 
-Accordingly:
+This is treated as an execution-infrastructure blocker, not as a passing or failing code result.
+
+## v0.6 acceptance
 
 ```text
-v0.5 implementation.................. COMPLETE FOR MILESTONE
-v0.5 adversarial test coverage....... COMMITTED
-v0.5 GitHub Actions execution........ BLOCKED BEFORE JOB CREATION
-v0.5 live-provider authorization..... DENIED
+Sandbox implementation................ ACCEPTED
+Adversarial test design............... COMMITTED
+Source-level pre-freeze review........ COMPLETED
+Clean execution certification......... BLOCKED
+Production provider release........... DENIED
+Production credentials................ DENIED
 ```
 
-## Production release blockers before any real S2/S3 provider
+See:
 
-- clean isolated execution of the v0.5 validation suite;
-- production asymmetric policy-signature/HSM verifier;
-- cryptographically verified OIDC/IdP identity and approval-session provenance;
-- provider-bound compensation actions with separate authorization;
-- fail-closed action audit integrated with the external immutable anchor path;
-- production-safe exact financial/resource units rather than generic floating reference units;
-- distributed resource reservation and replay state for multi-kernel/HA deployments;
-- explicit operator reconciliation workflow for `UNKNOWN_SIDE_EFFECT`;
-- sandboxed provider credentials and hard external provider ceilings;
-- security/adversarial certification of the complete live adapter boundary.
+```text
+11-KERNEL-RUNTIME/LIVE-ADAPTER-SAFETY-v0.6.md
+11-KERNEL-RUNTIME/PREMORTEM-v0.6.md
+11-KERNEL-RUNTIME/ACCEPTANCE-v0.6.md
+```
 
-## Release gate
+## Remaining production blockers
 
-No production write-capable email, payment, banking, CRM, deployment, advertising, accounting, or legal-signature provider should be enabled until:
+- clean execution of the committed 102-test validator;
+- CI on the exact release commit;
+- operation-specific business identity/deduplication beyond caller replay nonce;
+- one real provider's test-mode idempotency/lookup semantics;
+- compensation unknown-outcome reconciliation;
+- production cryptographic OIDC/MFA enforcement for sensitive approval classes;
+- asymmetric/HSM-backed policy trust root;
+- highly available independent immutable audit anchoring;
+- distributed/fenced replay, resource and reconciliation state;
+- exact-unit authority limits for financial policy thresholds;
+- workload-identity/mTLS/HSM-backed secret delivery;
+- provider webhook/event reconciliation;
+- provider-side canary limits and external hard ceilings;
+- migration/failover/incident runbooks.
+
+## Global release gate
+
+No production write-capable email, payment, banking, CRM, deployment, advertising, accounting or legal-signature provider should be enabled until:
 
 ```text
 identity verified
 + recursive authority provenance verified
 + policy authenticity verified
-+ device/provider identity bound
-+ approval floor satisfied
-+ resource reservation acquired
-+ compensation bound/authorized when required
-+ fail-closed audit prepared
-+ replay state protected
-+ external audit anchoring available
-+ crash/unknown-outcome reconciliation available
++ business target identity bound
++ semantic replay reserved
++ provider idempotency supported
++ approval provenance satisfied
++ exact resource reservation acquired
++ release authority anchored
++ provider PREPARE anchored
++ provider reconciliation available
++ compensation governed/reconcilable when required
++ distributed ownership/fencing available for HA
 ```
 
 ## Next engineering milestone
 
-Build **Company Kernel Live-Adapter Safety v0.6** without enabling production writes yet:
+Build **Company Kernel Distributed / Production Safety v0.7**.
 
-1. bind compensation plans to explicit authorized compensating device operations;
-2. replace generic financial reference units with exact integer/minor-unit accounting;
-3. integrate action PREPARE/COMMIT with tamper-evident/external audit anchoring;
-4. bind approvals to externally verified identity/session evidence;
-5. add a first provider adapter in sandbox/test mode only;
-6. enforce provider-side idempotency keys and provider result reconciliation;
-7. implement explicit `UNKNOWN_SIDE_EFFECT` operator/reconciliation workflow;
-8. execute the full adversarial suite in a clean environment before any production credential is accepted.
+Priority order:
+
+1. define shared/fenced persistence interfaces for replay, exact resources, approvals, provider state and reconciliation;
+2. add operation-specific business identity/idempotency contracts;
+3. make compensation outcome reconciliation symmetrical with forward execution;
+4. require production-grade external identity/MFA classes for selected S3 actions;
+5. harden remote audit-anchor authentication/availability;
+6. replace legacy floating financial authority limits with exact-unit policy constraints;
+7. implement one real provider adapter in **test/sandbox mode only** with provider-side hard limits;
+8. execute the full validator in a clean environment before accepting any production credential.
