@@ -62,14 +62,14 @@ class ExactAuthorityV07Tests(unittest.TestCase):
         }
 
     def approve_exact_elevation(self, max_units=30000, currency="USD", exponent=2):
-        requested = self.kernel.request_elevation(
+        requested = self.core.request_elevation(
             self.agent,
             "payments.refund",
             self.resource,
             self.exact_scope(max_units, currency, exponent),
             "test exact financial authority",
         )
-        self.kernel.approve_elevation(self.owner, requested["elevation_id"], 600)
+        self.core.approve_elevation(self.owner, requested["elevation_id"], 600)
         return requested
 
     def test_exact_threshold_allows_250_dollars_as_25000_minor_units(self):
@@ -115,14 +115,14 @@ class ExactAuthorityV07Tests(unittest.TestCase):
         self.assertEqual(cm.exception.code, "CFHS_INVALID_REQUEST")
 
     def test_legacy_float_elevation_does_not_bypass_exact_authority(self):
-        requested = self.kernel.request_elevation(
+        requested = self.core.request_elevation(
             self.agent,
             "payments.refund",
             self.resource,
             {"max_amount": 300},
             "legacy float elevation must not satisfy exact authority",
         )
-        self.kernel.approve_elevation(self.owner, requested["elevation_id"], 600)
+        self.core.approve_elevation(self.owner, requested["elevation_id"], 600)
         decision = self.kernel.authorize(
             self.agent,
             "payments.refund",
