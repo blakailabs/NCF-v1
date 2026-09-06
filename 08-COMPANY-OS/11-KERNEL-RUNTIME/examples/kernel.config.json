@@ -88,6 +88,14 @@
               "currency":"USD",
               "minor_exponent":2
             },
+            "distributed_safety":{
+              "business_identity":{
+                "contract_id":"payments.refund.target",
+                "contract_version":1,
+                "fields":["provider_account_id","charge_id","refund_reference"]
+              },
+              "fence_ttl_seconds":30
+            },
             "compensation":{
               "device_id":"payments-primary",
               "operation":"payments.refund.reverse",
