@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 214
+EXPECTED_TARGETED_TESTS = 222
 TESTS = [
     # v0.5 regression surface
     "test_action_safety_v05",
@@ -33,6 +33,7 @@ TESTS = [
     "test_distributed_compensation_v07",
     "test_shared_state_backend_v07",
     "test_control_plane_fencing_v07",
+    "test_exact_authority_v07",
 ]
 
 
@@ -86,6 +87,8 @@ def main() -> int:
             "fenced approval mutation",
             "atomic approval plus session provenance",
             "versioned approval control-plane journal",
+            "exact minor-unit financial authority",
+            "exact-unit elevation scope",
         ],
         "reference_backend_production_ready": False,
     }
