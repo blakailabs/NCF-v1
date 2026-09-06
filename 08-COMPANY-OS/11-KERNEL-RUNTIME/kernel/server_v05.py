@@ -67,6 +67,20 @@ class TrustKernelV05(TrustKernelV04):
             self.action_compensation,
             self.action_audit,
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS action_device_bindings(
+                intent_id TEXT PRIMARY KEY,
+                device_id TEXT NOT NULL,
+                operation TEXT NOT NULL,
+                resource TEXT NOT NULL,
+                side_effect_class TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                safety_profile_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
         self.simulated_adapter = SimulatedConsequentialAdapter()
         self.startup_recovery = self.action_coordinator.recovery.reconcile_all()
 
@@ -78,6 +92,54 @@ class TrustKernelV05(TrustKernelV04):
         if not op:
             raise HardeningError("CFHS_NOT_FOUND", "Device operation not found")
         return device, op
+
+    @staticmethod
+    def _request_signature(requests: list[ResourceRequest]) -> list[tuple[str, float]]:
+        return sorted((r.pool_id, float(r.amount)) for r in requests)
+
+    def _derive_action_safety(
+        self,
+        op: dict[str, Any],
+        arguments: dict[str, Any],
+        caller_resource_requests: list[dict[str, Any]] | None,
+        caller_required_approvals: int | None,
+    ) -> tuple[list[ResourceRequest], int, dict[str, Any]]:
+        side = op.get("side_effect_class", "S0")
+        profile = dict(op.get("action_safety") or {})
+        minimum = int(profile.get("minimum_approvals", 2 if side == "S3" else 0))
+        requested = int(caller_required_approvals or 0)
+        effective_approvals = max(minimum, requested)
+
+        derived: list[ResourceRequest] = []
+        pool_id = profile.get("resource_pool_id")
+        amount_argument = profile.get("resource_amount_argument")
+        if pool_id or amount_argument:
+            if not pool_id or not amount_argument:
+                raise HardeningError("CFHS_INVALID_POLICY", "Action safety resource policy is incomplete")
+            if amount_argument not in arguments:
+                raise HardeningError("CFHS_INVALID_REQUEST", f"Action requires resource amount argument: {amount_argument}")
+            try:
+                amount = float(arguments[amount_argument])
+            except (TypeError, ValueError):
+                raise HardeningError("CFHS_INVALID_REQUEST", f"Resource amount argument is not numeric: {amount_argument}")
+            if amount <= 0:
+                raise HardeningError("CFHS_INVALID_REQUEST", "Resource amount must be positive")
+            derived = [ResourceRequest(str(pool_id), amount)]
+        elif side in {"S2", "S3"}:
+            raise HardeningError("CFHS_INVALID_POLICY", "Consequential operation lacks kernel-owned resource reservation policy")
+
+        if caller_resource_requests:
+            supplied = [ResourceRequest(str(r["pool_id"]), float(r["amount"])) for r in caller_resource_requests]
+            if self._request_signature(supplied) != self._request_signature(derived):
+                raise HardeningError("CFHS_POLICY_DENIED", "Caller cannot alter operation resource reservations")
+
+        return derived, effective_approvals, profile
+
+    def _binding(self, intent_id: str):
+        row = self.core.store.one("SELECT * FROM action_device_bindings WHERE intent_id=?", (intent_id,))
+        if not row:
+            raise HardeningError("CFHS_CONFLICT", "Action intent is missing its device binding")
+        return row
 
     def configure_action_resource_pool(self, ctx: RequestContext, pool_id: str, hard_limit: float, used: float | None = None) -> dict[str, Any]:
         decision = self.authorize(ctx, "kernel.action.resource.configure", f"/run/actions/resources/{pool_id}", {})
@@ -104,7 +166,9 @@ class TrustKernelV05(TrustKernelV04):
         if decision["decision"] != "ALLOW":
             raise HardeningError("CFHS_POLICY_DENIED", "Action-intent creation denied", decision)
         device, op = self._device_operation(device_id, operation)
-        requests = [ResourceRequest(str(r["pool_id"]), float(r["amount"])) for r in (resource_requests or [])]
+        requests, effective_approvals, safety_profile = self._derive_action_safety(
+            op, arguments, resource_requests, required_approvals
+        )
         intent = ActionIntent.create(
             actor_id=ctx.actor_id,
             process_id=ctx.process_id,
@@ -114,9 +178,21 @@ class TrustKernelV05(TrustKernelV04):
             purpose=purpose,
             arguments=arguments,
             replay_nonce=replay_nonce,
-            required_approvals=required_approvals,
+            required_approvals=effective_approvals,
             evidence_refs=evidence_refs,
             resource_requests=requests,
+        )
+        self.core.store.execute(
+            "INSERT INTO action_device_bindings(intent_id,device_id,operation,resource,side_effect_class,provider,safety_profile_json) VALUES(?,?,?,?,?,?,?)",
+            (
+                intent.intent_id,
+                device_id,
+                operation,
+                intent.resource,
+                intent.side_effect_class,
+                str(device.get("provider", "unknown")),
+                json.dumps(safety_profile, sort_keys=True),
+            ),
         )
         self.action_coordinator.intents.register(intent)
         result = {
@@ -126,7 +202,18 @@ class TrustKernelV05(TrustKernelV04):
             "operation": operation,
             "simulation_only": True,
         }
-        self.hardened._chain(ctx, "action.intent.created", {"intent_id": intent.intent_id, "intent_digest": intent.intent_digest(), "side_effect_class": intent.side_effect_class})
+        self.hardened._chain(
+            ctx,
+            "action.intent.created",
+            {
+                "intent_id": intent.intent_id,
+                "intent_digest": intent.intent_digest(),
+                "side_effect_class": intent.side_effect_class,
+                "device_id": device_id,
+                "required_approvals": intent.required_approvals,
+                "resource_requests": [r.__dict__ for r in intent.resource_requests],
+            },
+        )
         return result
 
     def _load_intent(self, intent_id: str) -> ActionIntent:
@@ -159,7 +246,12 @@ class TrustKernelV05(TrustKernelV04):
         if decision["decision"] != "ALLOW":
             raise HardeningError("CFHS_POLICY_DENIED", "Action approval request denied", decision)
         count = max(intent.required_approvals, int(required_count or intent.required_approvals or 1))
-        result = self.action_approvals.create(intent.intent_digest(), ctx.actor_id, count, ttl_seconds, eligible_approvers)
+        eligible = sorted(set(eligible_approvers))
+        if count > 0 and len([p for p in eligible if p != ctx.actor_id]) < count:
+            raise HardeningError("CFHS_INVALID_REQUEST", "Not enough explicit eligible approvers for required approval count")
+        for principal_id in eligible:
+            self.core._principal(principal_id)
+        result = self.action_approvals.create(intent.intent_digest(), ctx.actor_id, count, ttl_seconds, eligible)
         self.hardened._chain(ctx, "action.approval.requested", {"intent_id": intent_id, **result})
         return result
 
@@ -195,10 +287,22 @@ class TrustKernelV05(TrustKernelV04):
         intent = self._load_intent(intent_id)
         if ctx.actor_id != intent.actor_id or ctx.process_id != intent.process_id:
             raise HardeningError("CFHS_POLICY_DENIED", "Action intent is bound to a different principal/process")
+        binding = self._binding(intent_id)
+        if binding["device_id"] != device_id or binding["operation"] != intent.action:
+            raise HardeningError("CFHS_CONFLICT", "Caller cannot substitute a different device or operation")
         device, op = self._device_operation(device_id, intent.action)
         expected_resource = device.get("resource", f"/dev/{device_id}")
-        if expected_resource != intent.resource or op.get("side_effect_class", "S0") != intent.side_effect_class:
-            raise HardeningError("CFHS_CONFLICT", "Device operation no longer matches bound action intent")
+        if (
+            expected_resource != binding["resource"]
+            or expected_resource != intent.resource
+            or op.get("side_effect_class", "S0") != binding["side_effect_class"]
+            or op.get("side_effect_class", "S0") != intent.side_effect_class
+            or str(device.get("provider", "unknown")) != binding["provider"]
+        ):
+            raise HardeningError("CFHS_CONFLICT", "Current device configuration differs from the bound action intent")
+        current_profile = json.dumps(op.get("action_safety") or {}, sort_keys=True)
+        if current_profile != binding["safety_profile_json"]:
+            raise HardeningError("CFHS_CONFLICT", "Action safety policy changed after intent creation; create a new intent")
         if approval_request_id:
             intent = intent.with_approval(approval_request_id)
 
@@ -215,7 +319,11 @@ class TrustKernelV05(TrustKernelV04):
             )
 
         result = self.action_coordinator.execute(intent, arguments, authorize, invoke, compensate)
-        self.hardened._chain(ctx, "action.executed.simulated", {"intent_id": intent_id, "status": result["status"], "simulation_only": True})
+        self.hardened._chain(
+            ctx,
+            "action.executed.simulated",
+            {"intent_id": intent_id, "status": result["status"], "simulation_only": True, "device_id": device_id},
+        )
         return result
 
 
