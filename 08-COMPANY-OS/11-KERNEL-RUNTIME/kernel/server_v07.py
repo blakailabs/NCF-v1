@@ -10,10 +10,11 @@ from .distributed_provider_gate import TrustKernelV07DistributedProviderGate
 from .remote_anchor import HTTPSAuditAnchorProvider
 from .runtime import CompanyKernel
 from .server_v02 import HardenedKernel
-from .server_v06 import Handler, _load_policy_keys
+from .server_v06 import _load_policy_keys
+from .server_v06_hardened import HardenedHandler
 
 
-class V07Handler(Handler):
+class V07Handler(HardenedHandler):
     kernel: TrustKernelV07DistributedProviderGate = None  # type: ignore
 
     def _translate_v7_path(self) -> str:
