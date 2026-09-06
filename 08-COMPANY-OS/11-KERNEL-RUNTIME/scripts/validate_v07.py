@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 233
+EXPECTED_TARGETED_TESTS = 246
 TESTS = [
     # v0.5 regression surface
     "test_action_safety_v05",
@@ -35,6 +35,7 @@ TESTS = [
     "test_control_plane_fencing_v07",
     "test_exact_authority_v07",
     "test_production_identity_v07",
+    "test_remote_anchor_hardening_v07",
 ]
 
 
@@ -95,9 +96,15 @@ def main() -> int:
             "authentication freshness enforcement",
             "MFA-bound elevation approval",
             "S3 strong-provenance release",
+            "authenticated audit-anchor request binding",
+            "signed endpoint receipt verification",
+            "N-of-M audit-anchor quorum",
+            "durable partial anchor receipts",
+            "replay-safe anchor reconciliation",
         ],
         "reference_backend_production_ready": False,
         "production_identity_policy_available": True,
+        "reference_anchor_crypto_production_ready": False,
     }
     print("\nV0.7_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
     if not exact_test_count:
