@@ -1,7 +1,7 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-05  
-**Current branch:** `feature/company-kernel-trust-hardening-v0.4`
+**Updated:** 2026-09-05 / 2026-09-06 UTC  
+**Current branch:** `feature/company-kernel-action-safety-v0.5`
 
 ## Canonical project identity
 
@@ -20,9 +20,10 @@ NCF constitutional governance
 → deterministic CFHS materializer
 → Company Kernel API
 → Company Kernel runtime v0.1
-→ Kernel hardening v0.2
+→ Kernel Hardening v0.2
 → Kernel Trust Layer v0.3
 → Kernel Trust Hardening v0.4
+→ Kernel Action Safety v0.5
 ```
 
 ## v0.1 — runnable kernel
@@ -35,7 +36,7 @@ Implemented:
 - `ALLOW`, `DENY`, `ELEVATION_REQUIRED`;
 - narrow human-approved elevation;
 - mock S2/S3 devices;
-- idempotency and resource ceilings;
+- idempotency/resource ceilings;
 - checkpoint/restart recovery.
 
 ## v0.2 — authenticated hardening
@@ -63,7 +64,7 @@ Secret scan............ PASS
 
 Implemented:
 
-- internally renamed project identity to **Company Operating System**;
+- canonical internal project identity: **Company Operating System**;
 - signed restrictive policy-package contract;
 - atomic activation;
 - session rotation;
@@ -74,7 +75,7 @@ Implemented:
 - independent audit-anchor abstraction;
 - GitHub read-only provider with no write API;
 - one-time bootstrap endpoint;
-- threat model and adversarial test catalog.
+- threat model/adversarial test catalog.
 
 Independent reference harness:
 
@@ -82,31 +83,27 @@ Independent reference harness:
 Trust primitive checks........ 11 / 11 PASS
 ```
 
-Full v0.3 CI remains release-blocked because GitHub Actions is currently producing `startup_failure` placeholders with zero jobs before checkout or test execution.
-
 ## v0.4 — trust hardening
 
-Implemented on `feature/company-kernel-trust-hardening-v0.4`:
+Implemented:
 
-- durable restart-safe one-time bootstrap state;
-- bootstrap completion and initial session issuance in one SQLite transaction;
-- restart no longer requires the original bootstrap secret after first initialization;
-- persistent signed-policy contents across restart;
+- durable restart-safe one-time bootstrap;
+- atomic bootstrap completion/session issuance;
+- persistent signed-policy contents;
 - semantic-version rollback protection;
-- same-version content-substitution rejection;
+- same-version substitution rejection;
 - recursive delegation-chain verification;
-- delegation proof/process-bound tamper detection;
-- authorization-time verification of delegated provenance;
-- expiring durable queue claim leases;
-- dead-letter transition and reason tracking;
+- delegation/process-bound tamper detection;
+- authorization-time provenance verification;
+- expiring event claims/dead-letter handling;
 - external OIDC identity broker contract;
-- one-time OIDC nonce consumption and kernel-session creation in one transaction;
-- remote HTTPS audit-anchor provider contract;
-- external HTTPS vault-provider implementation;
-- runnable v0.4 server wiring;
-- dedicated v0.4 restart/rollback/delegation/identity/anchor/vault tests committed.
+- atomic OIDC nonce/session issuance;
+- remote HTTPS audit-anchor contract;
+- external HTTPS vault provider;
+- runnable v0.4 server;
+- restart/rollback/delegation/identity/anchor/vault tests committed.
 
-## v0.4 acceptance status
+Acceptance:
 
 ```text
 IMPLEMENTED
@@ -115,21 +112,148 @@ CLEAN-ENVIRONMENT EXECUTION REQUIRED
 PRODUCTION WRITE RELEASE BLOCKED
 ```
 
-The GitHub Actions startup problem remains separate from runtime correctness: affected workflow records contain zero jobs and fail before checkout/compile/test.
+## v0.5 — Action Safety
 
-## Remaining trust gaps before live S2/S3 business writes
+Implemented on `feature/company-kernel-action-safety-v0.5`:
 
-- production asymmetric policy-signature verifier/HSM integration;
-- production cryptographic OIDC provider implementation and MFA/IdP configuration;
-- deployed remote immutable audit-anchor service;
-- protected vault bootstrap credential handling such as mTLS/HSM/workload identity;
-- distributed resource reservations;
-- durable replay/nonces across clustered kernels;
-- compensation/rollback orchestration;
-- fail-closed audit commit for consequential actions;
-- multi-party approval for selected S3 actions;
-- distributed queue coordination/HA/failover;
-- clean-environment adversarial certification.
+### Action intent and replay
+
+- stable semantic action-intent digest;
+- raw argument digest rather than raw argument persistence in the intent envelope;
+- replay nonce bound to semantic action;
+- committed replay returns without invoking the provider again;
+- nonce reuse with a different semantic action is rejected.
+
+### Kernel-owned resource safety
+
+- durable resource pools;
+- atomic multi-resource reservation;
+- reservation commit/release;
+- hard-limit enforcement;
+- operation-level `action_safety` policy;
+- reservation amount derived by the kernel from the bound operation and action arguments;
+- caller under-reservation/substitution rejected;
+- resource safety profile frozen into the action binding.
+
+### Approval safety
+
+- operation/kernel-owned minimum approval floor;
+- S3 refund example requires two approvals;
+- caller cannot lower the floor to zero;
+- explicit eligible approvers;
+- requester self-approval rejected;
+- duplicate approval does not increase the count;
+- otherwise-powerful principal does not count unless explicitly eligible.
+
+### Compensation safety
+
+- S2 compensation-plan requirement;
+- S1/S2 compensation callback requirement;
+- compensation success releases conservative resource reservation;
+- compensation failure creates explicit failure/uncertainty state.
+
+### Fail-closed action audit
+
+- durable action `PREPARED` record before provider invocation;
+- durable execution-start marker immediately before provider callback;
+- audit result commit after provider result;
+- audit evidence can recover interrupted resource/replay bookkeeping.
+
+### Crash consistency
+
+- durable action-intent index;
+- `PENDING → EXECUTING → terminal` lifecycle;
+- pending intents survive restart without being treated as failed execution;
+- startup recovery scans only in-flight `EXECUTING` actions;
+- crash before provider invocation releases resources safely;
+- crash after provider invocation begins becomes `UNKNOWN_SIDE_EFFECT` when no trustworthy result exists;
+- audit-committed actions repair unfinished resource/replay bookkeeping;
+- replay state can be repaired from committed audit evidence after resource/replay commit interruption.
+
+### Device/provider binding
+
+Action intent is durably bound to:
+
+```text
+device_id
+operation
+resource
+side-effect class
+provider
+operation action-safety profile
+```
+
+Device/provider/policy substitution after intent creation is rejected.
+
+### Simulation runtime
+
+`server_v05.py` provides the full Action Safety path using a simulated consequential adapter only.
+
+```text
+agent intent
+→ independent approvals
+→ v0.4 trust authorization
+→ replay check
+→ resource reservation
+→ audit prepare
+→ simulation invocation
+→ audit/resource/replay commit
+```
+
+No live business side effect is performed.
+
+### v0.5 validation surface
+
+Canonical validator:
+
+```bash
+cd 08-COMPANY-OS/11-KERNEL-RUNTIME
+PYTHONPATH=. python scripts/validate_v05.py
+```
+
+It compiles the runtime/tests and executes four targeted suites containing 34 Action Safety test methods:
+
+```text
+test_action_safety_v05
+test_action_crash_recovery_v05
+test_action_reconciliation_v05
+test_server_v05_integration
+```
+
+## Current GitHub Actions blocker
+
+GitHub is replacing workflow executions with a synthetic run:
+
+```text
+name: ""
+path: BuildFailed
+conclusion: startup_failure
+jobs: 0
+```
+
+The condition persists after the branch was reduced to a single minimal workflow and canonical validation command. The run fails before checkout, runner assignment, Python setup, compilation, or test execution.
+
+Accordingly:
+
+```text
+v0.5 implementation.................. COMPLETE FOR MILESTONE
+v0.5 adversarial test coverage....... COMMITTED
+v0.5 GitHub Actions execution........ BLOCKED BEFORE JOB CREATION
+v0.5 live-provider authorization..... DENIED
+```
+
+## Production release blockers before any real S2/S3 provider
+
+- clean isolated execution of the v0.5 validation suite;
+- production asymmetric policy-signature/HSM verifier;
+- cryptographically verified OIDC/IdP identity and approval-session provenance;
+- provider-bound compensation actions with separate authorization;
+- fail-closed action audit integrated with the external immutable anchor path;
+- production-safe exact financial/resource units rather than generic floating reference units;
+- distributed resource reservation and replay state for multi-kernel/HA deployments;
+- explicit operator reconciliation workflow for `UNKNOWN_SIDE_EFFECT`;
+- sandboxed provider credentials and hard external provider ceilings;
+- security/adversarial certification of the complete live adapter boundary.
 
 ## Release gate
 
@@ -138,25 +262,26 @@ No production write-capable email, payment, banking, CRM, deployment, advertisin
 ```text
 identity verified
 + recursive authority provenance verified
-+ signed policy authenticity verified
-+ secret scope bounded
-+ audit commit guaranteed
-+ external audit anchor available
-+ replay protection available
-+ resource reservation available
-+ compensation/rollback defined
-+ approval requirements satisfied
++ policy authenticity verified
++ device/provider identity bound
++ approval floor satisfied
++ resource reservation acquired
++ compensation bound/authorized when required
++ fail-closed audit prepared
++ replay state protected
++ external audit anchoring available
++ crash/unknown-outcome reconciliation available
 ```
 
 ## Next engineering milestone
 
-Build the **Company Kernel Action Safety Layer v0.5**:
+Build **Company Kernel Live-Adapter Safety v0.6** without enabling production writes yet:
 
-1. durable resource reservation/commit/release;
-2. consequential-action replay/nonces;
-3. compensation and rollback contracts;
-4. fail-closed audit transaction semantics;
-5. multi-party approval policies for selected S3 actions;
-6. action intent/evidence envelope;
-7. adversarial tests for partial failure and duplicate execution;
-8. only after certification, evaluate the first sandboxed real S2 write adapter.
+1. bind compensation plans to explicit authorized compensating device operations;
+2. replace generic financial reference units with exact integer/minor-unit accounting;
+3. integrate action PREPARE/COMMIT with tamper-evident/external audit anchoring;
+4. bind approvals to externally verified identity/session evidence;
+5. add a first provider adapter in sandbox/test mode only;
+6. enforce provider-side idempotency keys and provider result reconciliation;
+7. implement explicit `UNKNOWN_SIDE_EFFECT` operator/reconciliation workflow;
+8. execute the full adversarial suite in a clean environment before any production credential is accepted.
