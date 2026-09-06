@@ -46,7 +46,7 @@ class DurableActionIntentIndex:
             """
             INSERT OR IGNORE INTO action_intent_index(
                 intent_id,intent_digest,replay_nonce,side_effect_class,envelope_json,status,created_at,updated_at
-            ) VALUES(?,?,?,?,?,'ACTIVE',?,?)
+            ) VALUES(?,?,?,?,?,'PENDING',?,?)
             """,
             (
                 intent.intent_id,
@@ -80,21 +80,15 @@ class DurableActionIntentIndex:
         )
         self.conn.commit()
 
-    def active(self) -> list[dict[str, Any]]:
+    def recoverable(self) -> list[dict[str, Any]]:
         rows = self.conn.execute(
-            "SELECT * FROM action_intent_index WHERE status='ACTIVE' ORDER BY created_at,intent_id"
+            "SELECT * FROM action_intent_index WHERE status='EXECUTING' ORDER BY created_at,intent_id"
         ).fetchall()
         return [dict(r) for r in rows]
 
 
 class ActionRecoveryManager:
-    """Reconciles incomplete consequential actions after process/runtime failure.
-
-    The execution-started marker separates a safe pre-device crash from a crash
-    after the provider call began. Once execution began, recovery is deliberately
-    conservative: resources are accounted and replay is blocked until the outcome
-    is reconciled.
-    """
+    """Reconciles incomplete consequential actions after process/runtime failure."""
 
     def __init__(
         self,
@@ -128,6 +122,23 @@ class ActionRecoveryManager:
             (intent_id,),
         ).fetchone()
 
+    def _force_replay_committed(self, nonce: str, intent_digest: str, result_digest: str) -> None:
+        row = self.conn.execute(
+            "SELECT intent_digest,status FROM action_replay_nonces WHERE nonce=?",
+            (nonce,),
+        ).fetchone()
+        if not row or row["intent_digest"] != intent_digest:
+            raise HardeningError("CFHS_IDEMPOTENCY_CONFLICT", "Cannot recover replay commit for mismatched intent")
+        if row["status"] == "COMMITTED":
+            return
+        if row["status"] not in {"RESERVED", "UNKNOWN_SIDE_EFFECT"}:
+            raise HardeningError("CFHS_CONFLICT", f"Replay state is not recoverable to committed: {row['status']}")
+        self.conn.execute(
+            "UPDATE action_replay_nonces SET status='COMMITTED',result_digest=?,failure_code=NULL,updated_at=? WHERE nonce=?",
+            (result_digest, self._now(self.conn), nonce),
+        )
+        self.conn.commit()
+
     def _safe_preexecution_failure(self, intent, reservations: list[str], audit, now: str) -> dict[str, Any]:
         if reservations:
             self.resources.release_many(reservations)
@@ -156,6 +167,12 @@ class ActionRecoveryManager:
         execution_started = self.intents.execution_started(intent_id)
         now = self._now(self.conn)
 
+        # A created-but-never-executed intent is not a crash artifact.
+        if not replay and not reservations and not audit and not execution_started:
+            if intent["status"] == "EXECUTING":
+                self.intents.set_status(intent_id, "PENDING", now)
+            return {"intent_id": intent_id, "recovery": "NO_EXECUTION_STATE"}
+
         if replay and replay["status"] == "COMMITTED":
             if reservations:
                 self.resources.commit_many(reservations)
@@ -165,8 +182,8 @@ class ActionRecoveryManager:
         if audit and audit["status"] == "COMMITTED":
             if reservations:
                 self.resources.commit_many(reservations)
-            if replay and replay["status"] == "RESERVED":
-                self.replay.commit(intent["replay_nonce"], audit["result_digest"])
+            if replay and replay["status"] in {"RESERVED", "UNKNOWN_SIDE_EFFECT"}:
+                self._force_replay_committed(intent["replay_nonce"], intent["intent_digest"], audit["result_digest"])
             self.intents.set_status(intent_id, "COMMITTED_RECOVERED", now)
             return {"intent_id": intent_id, "recovery": "COMMITTED_FROM_AUDIT"}
 
@@ -184,7 +201,6 @@ class ActionRecoveryManager:
                 self.intents.set_status(intent_id, "FAILED_COMPENSATED", now)
                 return {"intent_id": intent_id, "recovery": "FAILED_COMPENSATED"}
 
-        # Execution began and no trustworthy terminal result exists.
         if reservations:
             self.resources.commit_many(reservations)
         if replay and replay["status"] == "RESERVED":
@@ -202,7 +218,7 @@ class ActionRecoveryManager:
         return {"intent_id": intent_id, "recovery": "UNKNOWN_SIDE_EFFECT"}
 
     def reconcile_all(self) -> dict[str, Any]:
-        results = [self.reconcile_intent(row["intent_id"]) for row in self.intents.active()]
+        results = [self.reconcile_intent(row["intent_id"]) for row in self.intents.recoverable()]
         return {"count": len(results), "results": results}
 
 
@@ -232,6 +248,7 @@ class CrashSafeConsequentialActionCoordinator(ConsequentialActionCoordinator):
         compensate: Callable[[dict[str, Any], Exception | None], Any] | None = None,
     ) -> dict[str, Any]:
         self.intents.register(intent)
+        self.intents.set_status(intent.intent_id, "EXECUTING", self.recovery._now(self.conn))
 
         def marked_invoke(args: dict[str, Any]):
             self.intents.mark_execution_started(intent.intent_id, self.recovery._now(self.conn))
@@ -242,10 +259,18 @@ class CrashSafeConsequentialActionCoordinator(ConsequentialActionCoordinator):
             status = "REPLAYED" if result.get("status") == "REPLAYED" else "COMMITTED"
             self.intents.set_status(intent.intent_id, status, self.recovery._now(self.conn))
             return result
-        except HardeningError:
+        except HardeningError as exc:
             replay = self.replay.get(intent.replay_nonce)
-            if replay and replay["status"] in {"FAILED", "UNKNOWN_SIDE_EFFECT"}:
+            if exc.code in {"CFHS_RESOURCE_COMMIT_FAILED", "CFHS_REPLAY_COMMIT_FAILED"}:
+                try:
+                    self.recovery.reconcile_intent(intent.intent_id)
+                except Exception:
+                    pass
+            elif replay and replay["status"] in {"FAILED", "UNKNOWN_SIDE_EFFECT"}:
                 self.intents.set_status(intent.intent_id, replay["status"], self.recovery._now(self.conn))
+            elif not replay:
+                # Authorization/approval/compensation prerequisites can be fixed and retried.
+                self.intents.set_status(intent.intent_id, "PENDING", self.recovery._now(self.conn))
             raise
         except Exception as exc:
             recovery = self.recovery.reconcile_intent(intent.intent_id)
