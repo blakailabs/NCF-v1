@@ -6,16 +6,16 @@ import os
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlparse
 
-from .distributed_provider_gate import TrustKernelV07DistributedProviderGate
 from .remote_anchor import HTTPSAuditAnchorProvider
 from .runtime import CompanyKernel
 from .server_v02 import HardenedKernel
 from .server_v06 import _load_policy_keys
 from .server_v06_hardened import HardenedHandler
+from .transactional_provider_gate import TrustKernelV07TransactionalProviderGate
 
 
 class V07Handler(HardenedHandler):
-    kernel: TrustKernelV07DistributedProviderGate = None  # type: ignore
+    kernel: TrustKernelV07TransactionalProviderGate = None  # type: ignore
 
     def _translate_v7_path(self) -> str:
         original = self.path
@@ -36,6 +36,7 @@ class V07Handler(HardenedHandler):
                 {
                     "distributed_safety_version": "0.7",
                     "kernel_instance_id": self.kernel.kernel_instance_id,
+                    "canonical_provider_gate": "TrustKernelV07TransactionalProviderGate",
                     "production_credentials_allowed": False,
                     "provider_registry": sorted(self.kernel.providers),
                     "distributed_controls": [
@@ -44,6 +45,11 @@ class V07Handler(HardenedHandler):
                         "provider stale-fence rejection",
                         "fenced provider execution",
                         "fenced reconciliation ownership",
+                        "atomic fenced exact-resource prepare",
+                        "versioned distributed transaction journal",
+                        "retryable safe abort",
+                        "pre-execution takeover after fence expiry",
+                        "transaction-coordinated provider lifecycle",
                     ],
                     "compensation_status": "BLOCKED_PENDING_DISTRIBUTED_INTEGRATION",
                     "audit_chain": self.kernel.hardened.audit_chain.verify(),
@@ -83,7 +89,7 @@ def main():
     core = CompanyKernel.from_file(args.state_dir, args.config)
     hardened = HardenedKernel(core, args.policy_dir, set(), False)
     anchor = HTTPSAuditAnchorProvider(args.remote_anchor_endpoint) if args.remote_anchor_endpoint else None
-    V07Handler.kernel = TrustKernelV07DistributedProviderGate(
+    V07Handler.kernel = TrustKernelV07TransactionalProviderGate(
         hardened,
         _load_policy_keys(args.policy_key_env),
         anchor,
@@ -103,8 +109,10 @@ def main():
     server = ThreadingHTTPServer((args.host, args.port), V07Handler)
     print(f"Company Kernel Distributed Safety v0.7 listening on http://{args.host}:{args.port}", flush=True)
     print(f"Kernel instance: {args.kernel_instance_id}", flush=True)
-    print("Execution: BUSINESS IDENTITY + CURRENT FENCE REQUIRED BEFORE PROVIDER INVOCATION", flush=True)
-    print("Reconciliation: SEPARATELY FENCED WITH A HIGHER OWNERSHIP EPOCH", flush=True)
+    print("Canonical gate: TrustKernelV07TransactionalProviderGate", flush=True)
+    print("PREPARE: AUTHORITY ANCHORED + EXACT CAPACITY + OWNERSHIP FENCE COORDINATED", flush=True)
+    print("Execution: CURRENT TRANSACTION EPOCH + PROVIDER STALE-FENCE ACCEPTANCE REQUIRED", flush=True)
+    print("Reconciliation: SAME TRANSACTION ID + HIGHER FENCING EPOCH", flush=True)
     print("Compensation: BLOCKED UNTIL DISTRIBUTED COMPENSATION SAFETY IS INTEGRATED", flush=True)
     print("Provider registry: SANDBOX ONLY. Production credentials/providers are rejected.", flush=True)
     server.serve_forever()
