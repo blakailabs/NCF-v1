@@ -1,140 +1,200 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-06 19:15 UTC  
-**Engineering branch:** `feature/company-kernel-distributed-safety-v0.7`  
-**Draft PR:** #3 — Company Kernel Distributed / Production Safety v0.7
+**Updated:** 2026-09-06 19:49 UTC  
+**Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
+**Milestone:** Company Kernel HA Persistence Safety v0.8
 
 ## Project identity
 
 **Project:** Company Operating System  
 **Repository:** `blakailabs/NCF-v1`  
-**Intended repository slug:** `blakailabs/Company-Operating-System`  
+**Intended repository slug:** `blakailabs/Company-Operating-System`
 
 NCF remains the constitutional governance layer inside the broader Company Operating System.
 
-## Canonical v0.7 runtime
+## Merged baseline
+
+v0.7 distributed/production-safety checkpoint was merged through PR #3 at:
 
 ```text
-kernel.server_v07
-→ TrustKernelV07RecoverableAnchorFinalGate
-→ TrustKernelV07ProductionIdentityFinalGate
-→ TrustKernelV07ExactAuthorityFinalGate
-→ TrustKernelV07ControlPlaneFinalGate
-→ TrustKernelV07DistributedCompensationFinalGate
-→ TrustKernelV07TransactionalProviderGate
-→ RecoverableSQLiteFencedStateCoordinator
+25382c018e8bf3cfe426940afc8f622b526ba191
 ```
 
-## Implemented safety layers
+The merged v0.7 baseline remains certified at **264 / 264 targeted tests**.
+
+## v0.8 engineering doctrine
+
+Company OS now carries an explicit evidence-first architecture doctrine:
 
 ```text
-Business-object identity................ IMPLEMENTED
-Semantic replay safety.................. IMPLEMENTED
-Monotonic distributed fencing........... IMPLEMENTED
-Provider stale-fence protection......... IMPLEMENTED
-Transactional PREPARE................... IMPLEMENTED
-Forward outcome reconciliation.......... IMPLEMENTED
-Distributed compensation................ IMPLEMENTED
-Compensation reconciliation............. IMPLEMENTED
-Shared persistence contract............. IMPLEMENTED / REFERENCE ONLY
-Fenced approval control plane........... IMPLEMENTED
-Exact financial authority............... IMPLEMENTED
-Production identity/MFA policy.......... IMPLEMENTED / SANDBOX CONFIG
-Authenticated quorum anchor contract..... IMPLEMENTED / REFERENCE CRYPTO
-Same-head anchor recovery................ IMPLEMENTED
-Canonical server anchor wiring.......... IMPLEMENTED
-Canonical v0.7 certification............ 264 / 264 PASS
+Reality first.
+Structure second.
+Automation third.
+AI last.
 ```
 
-## Remote audit-anchor checkpoint
+Major architecture decisions distinguish formal standards, authoritative implementation evidence, empirical research, proven production patterns, and design heuristics/analogies. An analogy is not permitted to become a kernel invariant merely because it is intuitive.
 
-The canonical v0.7 server no longer treats one unauthenticated HTTPS endpoint as a hardened remote-anchor path.
-
-Hardened reference mode requires:
+See:
 
 ```text
-2+ HTTPS anchor endpoints
-+ explicit N-of-M quorum
-+ authenticated deterministic request binding
-+ per-endpoint signed receipt verification
-+ durable partial verified receipts
-+ replay-safe reconciliation
-+ same local audit-chain head across outage/retry
-+ runtime-only key environment references
+08-COMPANY-OS/11-KERNEL-RUNTIME/EVIDENCE-AND-STRUCTURE-DOCTRINE.md
 ```
 
-A legacy single endpoint is rejected as hardened mode. Partial configuration fails closed.
+## v0.8 — HA Persistence Safety
 
-The dependency-free HMAC mechanism is intentionally a **reference/test authentication contract only**. It is not asymmetric, mTLS, HSM/KMS-backed, or production-certified trust.
-
-No raw secret values are committed to the repository.
-
-## Production identity / MFA
-
-Checked-in reference configuration remains:
+Current work deliberately separates four concepts that must not be collapsed into a single `production_ready=true` flag:
 
 ```text
-security.production_identity.mode = sandbox
+backend capability contract
++ deployment/topology evidence
++ observed behavioral probes
++ independent trusted attestation
 ```
 
-When production mode is explicitly enabled in a controlled deployment, consequential human authority requires:
+### HA deployment evidence
+
+`kernel/ha_persistence.py` requires evidence for:
 
 ```text
-verified external identity
-+ allowed provider and issuer
-+ required MFA/AMR
-+ allowed ACR when configured
-+ recent auth_time
-+ valid matching kernel session
+backend and cluster identity
+monotonic topology epoch
+voting-member topology
+failure domains
+healthy voting quorum
+consensus protocol
+write quorum
+explicit read-consistency model
+synchronous commit
+synchronous replica acknowledgements
+authoritative backend time
+backend/consensus lease time
+split-brain protection
+behavioral probe results
+independent attestation
 ```
 
-This is enforced for action approvals, S3 release, compensation, and exact-authority elevation approval/use.
+Company OS currently applies a default release policy of at least three voting members and three failure domains. Those counts are **Company OS release policy**, not a claim that every consensus database universally requires the same topology.
 
-No live production IdP is configured by this repository.
-
-## Exact financial authority
-
-Reference standing refund authority:
+Read consistency is explicitly modeled rather than forced into one database architecture:
 
 ```text
-USD $250.00 = 25,000 minor units
+quorum
+leader_linearizable
+serializable_transaction
 ```
 
-Sub-minor precision and non-finite values are rejected. Float-only legacy elevation cannot bypass the exact-unit boundary.
+### Required behavioral probes
 
-## Shared persistence boundary
-
-The certified persistence contract requires:
+A production HA candidate must provide fresh evidence for:
 
 ```text
-serializable transactions
+serializable_transaction
+compare_and_swap
+monotonic_fencing
+ordered_journal
+multi_connection_visibility
+synchronous_durability
+authoritative_time
+quorum_loss_fail_closed
+stale_owner_rejected_after_takeover
+network_partition_single_writer
+```
+
+The current certification model does not allow self-asserted backend capability flags to substitute for deployment and behavioral evidence.
+
+### Trusted deployment attestation
+
+Production-readiness requires a fresh independently verified attestation bound to the exact deployment evidence digest.
+
+Accepted reference verification classes are:
+
+```text
+provider_control_plane
+cluster_consensus_attestation
+independent_observer
+```
+
+Missing, stale, failed, incomplete or digest-mismatched attestation fails closed.
+
+### Certification lifecycle
+
+`kernel/ha_certification_runtime.py` adds time-bounded and rollback-resistant certification semantics.
+
+Rules include:
+
+```text
+only fully production-ready evidence may become ACTIVE
+certificate lifetime is bounded by the oldest supporting evidence
+cluster identity cannot silently change
+topology epoch cannot move backward
+same epoch cannot bind different evidence
+evidence nonce cannot be reused for different evidence
+higher topology epoch supersedes the prior certificate
+certification can be explicitly invalidated
+expired certification loses authority immediately
+```
+
+The certification guard checks time through `backend.authoritative_now()` rather than through the caller/client clock.
+
+### Guarded shared persistence
+
+`CertifiedSharedPersistence` refuses shared-state access unless the backend currently holds an active, unexpired HA certification.
+
+This gate applies to:
+
+```text
+reads
+writes / put-if-absent
 compare-and-swap
-monotonic fencing
-durable ordered journal
-multi-connection visibility
-synchronous durability
-authoritative shared time
-distributed quorum
+fence acquisition/assertion/renewal/release
+ordered journals
+atomic fenced mutation
 ```
 
-The SQLite implementation validates the semantics but is explicitly **not production-ready** because it lacks distributed quorum and authoritative shared time.
+Invalidation or certificate expiry causes subsequent operations to fail closed.
 
-## Certification
+## Explicit non-claims
+
+The v0.8 certification ledger currently uses SQLite **only as a reference implementation of certification lifecycle semantics**. It is not the production HA control plane.
+
+Likewise, the v0.7 SQLite shared-state backend remains explicitly not production-ready because it lacks authoritative distributed time and distributed quorum.
+
+```text
+Real production HA backend.............. NOT ENABLED
+SQLite reference backend................ NOT PRODUCTION READY
+Production credentials.................. DENIED
+Production write providers.............. DISABLED
+Live production IdP..................... NOT ENABLED
+Production asymmetric/HSM anchor trust.. PENDING
+```
+
+## v0.8 certification
 
 Canonical command:
 
 ```bash
 cd 08-COMPANY-OS/11-KERNEL-RUNTIME
-PYTHONPATH=. python scripts/validate_v07.py
+PYTHONPATH=. python scripts/validate_v08.py
 ```
 
-Final exact-count checkpoint before PR merge:
+Current exact-count checkpoint:
 
 ```text
-Run ID: 34054241130
-Commit: 4c091e7a35894e6c4b7d18c1690401ff1756a77c
-Ran 264 tests in 6.411s
-264 / 264 PASS
+264  frozen v0.5-v0.7 regression tests
+ 21  HA deployment-readiness tests
+ 15  HA certification lifecycle/runtime guard tests
+---
+300 targeted tests
+```
+
+Latest certified run:
+
+```text
+Run ID: 34055983029
+Commit: f0dc98080ed28b60c4d0c717c1e8c1b7f2e6cdcd
+Ran 300 tests in 6.246s
+300 / 300 PASS
 0 failures
 0 errors
 0 skipped
@@ -142,36 +202,8 @@ exact_test_count = true
 successful = true
 ```
 
-The 264-test surface includes all prior v0.5/v0.6/v0.7 regression tests plus production identity/MFA, exact authority, distributed compensation, shared-state conformance, fenced approval control, authenticated quorum anchoring, same-head anchor recovery, and canonical server anchor wiring.
+## Next v0.8 increment
 
-## Production posture
+Build the **active HA conformance/probe harness** so certification evidence for transaction isolation, CAS, fencing, journal ordering, multi-client visibility, authoritative time, quorum-loss behavior, stale-owner takeover and network-partition single-writer behavior is generated from observed tests rather than hand-assembled booleans.
 
-```text
-Production HA persistence backend....... PENDING
-Production asymmetric/HSM anchor trust.. PENDING
-Live production IdP integration......... NOT ENABLED
-Provider event/webhook reconciliation... PENDING
-Real provider test-mode adapter.......... NOT YET ENABLED
-Network partition/failover drills........ PENDING
-Production credentials.................. DENIED
-Production write providers.............. DISABLED
-```
-
-## Release rule
-
-No production write-capable provider is enabled until the applicable path has verified identity, authentic policy, exact authority where applicable, business identity, replay binding, exact capacity, current fencing, provider idempotency, strong approvals, externally authenticated audit anchoring, forward reconciliation, governed compensation, and a production shared/HA state backend.
-
-## Administrative rename
-
-Still pending:
-
-```text
-blakailabs/NCF-v1
-→ blakailabs/Company-Operating-System
-```
-
-See `/ADMIN-RENAME.md`.
-
-## Next clean PR
-
-After PR #3 is merged, the next engineering PR should start from the merged checkpoint and address the next unresolved production boundary rather than continuing to accumulate unrelated work in PR #3.
+Chaos/partition evidence must come through an explicit independent fault-control interface; absence of that interface leaves production certification incomplete rather than being treated as a pass.
