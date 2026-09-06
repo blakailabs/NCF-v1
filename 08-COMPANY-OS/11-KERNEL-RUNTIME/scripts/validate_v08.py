@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 300
+EXPECTED_TARGETED_TESTS = 314
 TESTS = [
     # frozen v0.5-v0.7 regression surface
     "test_action_safety_v05",
@@ -40,6 +40,7 @@ TESTS = [
     # v0.8 HA persistence certification surface
     "test_ha_persistence_v08",
     "test_ha_certification_runtime_v08",
+    "test_ha_probe_harness_v08",
 ]
 
 
@@ -96,9 +97,21 @@ def main() -> int:
             "cluster identity continuity",
             "certification invalidation",
             "all shared-state access gated by active certification",
+            "active multi-client CAS probe",
+            "active monotonic fencing probe",
+            "active ordered journal probe",
+            "active cross-client visibility probe",
+            "active authoritative-time probe",
+            "controlled serializable conflict observation",
+            "durability reconnect and failover observation",
+            "independent chaos-controller quorum-loss probe",
+            "independent chaos-controller partition probe",
+            "blocked chaos evidence cannot pass certification",
+            "per-probe negative evidence preservation",
         ],
         "sqlite_reference_production_ready": False,
         "real_ha_backend_enabled": False,
+        "real_chaos_environment_enabled": False,
     }
     print("\nV0.8_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
     if not exact_test_count:
