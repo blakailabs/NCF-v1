@@ -1,6 +1,6 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-06 19:57 UTC  
+**Updated:** 2026-09-06 20:05 UTC  
 **Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
 **Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
 
@@ -44,25 +44,13 @@ backend capability contract
 + independent trusted attestation
 ```
 
-### Deployment/certification rules
+### Certification lifecycle
 
-The current v0.8 model requires backend and cluster identity, monotonic topology epoch, policy-acceptable voting/failure-domain layout, healthy quorum, explicit consensus/read semantics, synchronous commit/acks, authoritative backend time, split-brain protection, fresh probe evidence and trusted attestation.
+HA certification is time-bounded by the oldest supporting evidence, checked with backend-authoritative time, may be invalidated, cannot roll topology backward, cannot silently change cluster identity, and gates all shared-state operations.
 
-Certification is time-bounded by its oldest supporting evidence, may be invalidated, cannot roll topology backward, and is checked using backend-authoritative time.
+### Active behavioral evidence
 
-`CertifiedSharedPersistence` denies shared-state operations without an active unexpired HA certificate.
-
-### Active conformance probe harness
-
-v0.8 now generates behavioral evidence from observed operations rather than accepting probe booleans from configuration.
-
-The canonical reference runner is:
-
-```text
-ResilientHAConformanceProbeHarness
-```
-
-Actively observed probes cover:
+`ResilientHAConformanceProbeHarness` generates observed evidence for:
 
 ```text
 controlled serializable conflict
@@ -77,34 +65,47 @@ quorum-loss fail-closed behavior
 network-partition single-writer behavior
 ```
 
-Quorum-loss and network-partition probes require a **separate `HAChaosController`**. If that controller is absent, those probes are `BLOCKED`; no positive `HAProbeEvidence` is emitted and production certification remains incomplete.
+Quorum-loss and partition claims require an independent `HAChaosController`. Without it those probes are BLOCKED and production certification remains incomplete.
 
-Per-probe exceptions become explicit negative evidence instead of aborting the whole run. Failure of authoritative backend time remains fatal because trustworthy evidence timestamps cannot then be established.
+### Digest-bound evidence assembly
 
-### Negative controls
-
-The harness tests deliberately verify detection of:
+`HAEvidenceAssembler` now combines two distinct observed sources:
 
 ```text
-serializable stale-snapshot double commit
-stale CAS acceptance
-stale fence acceptance
-stale journal append acceptance
-cross-connection invisibility
-acknowledged data missing after failover
-regressing authoritative time
-ineffective quorum-loss fault
-minority partition writer / split brain
-individual probe exceptions
+independent topology snapshot
++
+active probe report
 ```
+
+The topology source must declare an accepted source class and provide a source receipt digest. Topology and probe backend identities must match and their observations must fall inside a bounded time window.
+
+The final evidence nonce is derived—not caller chosen—from:
+
+```text
+topology snapshot digest
++ topology-source receipt digest
++ probe-report digest
+```
+
+Blocked, failed or missing probes propagate into the assembled evidence and cannot become positive evidence by omission.
+
+Accepted topology source classes currently are:
+
+```text
+provider_control_plane
+cluster_consensus
+independent_observer
+```
+
+The assembled evidence is compatible with the existing independent-attestation and certification-lifecycle gates.
 
 ## Current certification
 
 ```text
-Run ID: 34056407002
-Commit: 4a0d17b4cae2e72b95ba6b404c12bf49a980fe2a
-Ran 314 tests in 6.399s
-314 / 314 PASS
+Run ID: 34056548949
+Commit: c1b92423093ac1266b14e25e7624a702fdc4c7ff
+Ran 325 tests in 21.091s
+325 / 325 PASS
 0 failures
 0 errors
 0 skipped
@@ -117,26 +118,29 @@ Exact-count surface:
 ```text
 264  frozen v0.5-v0.7 regressions
  21  HA deployment-readiness tests
- 15  HA certification lifecycle/runtime guard tests
- 14  active probe-harness tests
+ 15  HA certification lifecycle/runtime tests
+ 14  active HA probe-harness tests
+ 11  digest-bound HA evidence-pipeline tests
 ---
-314 targeted tests
+325 targeted tests
 ```
 
 ## Explicit non-claims
 
 ```text
 Real production HA backend.............. NOT ENABLED
+Real topology control-plane adapter...... NOT ENABLED
 Real chaos/partition environment......... NOT ENABLED
 SQLite reference backend................ NOT PRODUCTION READY
+Production certification control plane.. REFERENCE ONLY
 Production credentials.................. DENIED
 Production write providers.............. DISABLED
 Live production IdP..................... NOT ENABLED
 Production asymmetric/HSM anchor trust.. PENDING
 ```
 
-The passing reference chaos tests validate the **probe contract and detection logic**, not a real distributed database deployment.
+The passing reference tests certify contracts, evidence binding and detection logic—not a real distributed database cluster.
 
 ## Next v0.8 increment
 
-Bind active probe reports to an independently sourced topology snapshot so `HADeploymentEvidence` is assembled from observed, digest-bound sources rather than manually supplied topology/probe fields. Then feed that assembled evidence through the existing trusted-attestation and certification lifecycle gates.
+Solve the **first-certification bootstrap trust problem** without circular trust. The first production HA certificate must not require an already-certified backend to authorize storing itself, and bootstrap must not become an unrestricted bypass. The planned boundary is a short-lived, one-time external certification-authority permit bound to one backend, cluster, topology epoch, evidence digest and certification digest.
