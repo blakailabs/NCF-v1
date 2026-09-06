@@ -50,13 +50,36 @@
       "id":"mail-primary",
       "resource":"/dev/mail/primary",
       "provider":"mock-mail",
-      "operations":[{"name":"mail.send","side_effect_class":"S2","idempotency_required":true,"resource_type":"outbound_messages"}]
+      "operations":[
+        {
+          "name":"mail.send",
+          "side_effect_class":"S2",
+          "idempotency_required":true,
+          "resource_type":"outbound_messages",
+          "action_safety":{
+            "resource_pool_id":"outbound-message-budget",
+            "resource_amount_argument":"resource_amount",
+            "minimum_approvals":0
+          }
+        }
+      ]
     },
     {
       "id":"payments-primary",
       "resource":"/dev/payments/primary",
       "provider":"mock-payments",
-      "operations":[{"name":"payments.refund","side_effect_class":"S3","idempotency_required":true}]
+      "operations":[
+        {
+          "name":"payments.refund",
+          "side_effect_class":"S3",
+          "idempotency_required":true,
+          "action_safety":{
+            "resource_pool_id":"refund-budget",
+            "resource_amount_argument":"amount",
+            "minimum_approvals":2
+          }
+        }
+      ]
     },
     {
       "id":"http-readonly",
