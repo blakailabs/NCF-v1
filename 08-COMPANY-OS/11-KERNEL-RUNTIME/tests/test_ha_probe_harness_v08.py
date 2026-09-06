@@ -1,6 +1,6 @@
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from kernel.ha_persistence import (
@@ -229,11 +229,6 @@ class ReferenceChaosController:
         return fault
 
     def heal(self, fault):
-        # The controller owns fault state transitions rather than the client.
-        if fault.fault_type == "quorum_loss":
-            self._target_from_fault = None
-        # Tests pass the target by shared reference; reset all active fault state
-        # through the targets captured in begin methods below.
         for target in getattr(self, "targets", []):
             target.quorum_lost = False
             target.partition_groups = None
@@ -372,7 +367,7 @@ class HAProbeHarnessV08Tests(unittest.TestCase):
         self.assertIsNone(self.result(report, "synchronous_durability").observation["failover_value_digest"])
 
     def test_regressing_authoritative_time_is_detected(self):
-        self.target.time_sequence = [self.now, self.now.replace(second=self.now.second - 1)]
+        self.target.time_sequence = [self.now, self.now - timedelta(seconds=1)]
         result = self.harness()._probe_time()
         self.assertEqual(result.status, "FAIL")
         self.assertFalse(result.observation["nondecreasing"])
