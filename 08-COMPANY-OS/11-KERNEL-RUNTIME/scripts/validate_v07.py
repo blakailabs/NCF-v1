@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 252
+EXPECTED_TARGETED_TESTS = 259
 TESTS = [
     "test_action_safety_v05",
     "test_action_crash_recovery_v05",
@@ -34,6 +34,7 @@ TESTS = [
     "test_production_identity_v07",
     "test_remote_anchor_hardening_v07",
     "test_remote_anchor_config_v07",
+    "test_recoverable_anchor_consumers_v07",
 ]
 
 
@@ -98,10 +99,13 @@ def main() -> int:
             "durable partial anchor receipts",
             "replay-safe anchor reconciliation",
             "fail-closed remote anchor runtime config",
+            "same-head provider-action anchor recovery",
+            "same-head authorization anchor recovery",
         ],
         "reference_backend_production_ready": False,
         "production_identity_policy_available": True,
         "authenticated_quorum_anchor_available": True,
+        "recoverable_anchor_consumers_available": True,
         "reference_anchor_crypto_production_ready": False,
     }
     print("\nV0.7_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
