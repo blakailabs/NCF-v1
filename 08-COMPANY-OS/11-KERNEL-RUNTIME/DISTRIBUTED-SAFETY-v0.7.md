@@ -5,13 +5,15 @@
 **Base milestone:** merged Live-Adapter Safety v0.6  
 **Status:** active engineering milestone; production credentials remain disabled
 
-## Purpose
+## Canonical runtime
 
-v0.6 proved provider-shaped consequential execution on a single durable kernel reference runtime.
+```text
+kernel.server_v07
+→ TrustKernelV07DistributedCompensationFinalGate
+→ RecoverableSQLiteFencedStateCoordinator
+```
 
-v0.7 is moving the kernel from **single-kernel correctness** toward **distributed ownership correctness**.
-
-The canonical provider path now is:
+The canonical provider path now covers both forward execution and governed reversal:
 
 ```text
 BusinessObjectIdentity
@@ -20,19 +22,24 @@ BusinessObjectIdentity
 → atomic distributed transaction PREPARE
     ├── exact resource capacity
     └── ownership fencing epoch
-→ v0.6 provider PREPARE using the same exact reservation
+→ provider PREPARE
 → current transaction epoch revalidation
 → provider/gateway stale-fence guard
 → provider invocation
-→ terminal state OR reconciliation required
-→ same transaction ID + higher reconciliation fencing epoch
+→ terminal state OR reconciliation
+→ same transaction ID + higher reconciliation epoch
+→ independent compensation authority / approvals
+→ compensation identity
+→ new compensation fencing epoch
+→ provider-idempotent reversal
+→ COMPENSATED OR compensation reconciliation
 ```
 
 ## Business-object identity
 
-Each consequential operation declares a versioned identity contract describing the real-world target independently of caller replay nonce.
+Consequential operations declare a versioned contract identifying the real-world target independently of replay nonce.
 
-Reference refund contract:
+Reference refund identity:
 
 ```text
 payments.refund.target/v1
@@ -41,22 +48,13 @@ payments.refund.target/v1
 → refund_reference
 ```
 
-The identity digest binds contract ID, contract version, operation and a digest of the declared identity fields. Raw business identity values are not persisted by the reference distributed ledgers.
-
-### Semantic binding rule
+Raw identity values are not persisted by the distributed identity ledgers.
 
 ```text
-same business identity + same semantic intent
-→ idempotent
-
-same business identity + different semantic intent
-→ CFHS_BUSINESS_IDENTITY_CONFLICT
-
-same semantic intent + different business identity
-→ CFHS_BUSINESS_IDENTITY_CONFLICT
+same business identity + same semantic intent → idempotent
+same business identity + different semantic intent → conflict
+same semantic intent + different business identity → conflict
 ```
-
-This prevents the same real-world action from becoming a second action merely because a caller supplied a new replay nonce.
 
 ## Monotonic fencing
 
@@ -66,222 +64,164 @@ Each distributed business resource receives a monotonically increasing ownership
 kernel A → token 1
 lease expires / ownership changes
 kernel B → token 2
-kernel A resumes with token 1 → stale / rejected
+stale kernel A → rejected
 ```
 
-Tokens never decrease or get reused for a later ownership epoch.
+A provider/gateway guard independently rejects lower epochs after observing a newer token. Fence metadata stays outside provider business arguments so ownership changes do not alter provider idempotency digests.
 
-The reference SQLite implementation persists the last issued epoch separately from the active lease, so clean release, retry and takeover all advance the token.
+## Transaction-coordinated PREPARE
 
-## Provider-side stale-fence rejection
-
-Kernel-side ownership checks are insufficient if a stale kernel can still reach an external provider with valid credentials.
-
-v0.7 therefore models an independent provider/gateway guard:
-
-```text
-highest provider-observed fence = 8
-request arrives with fence = 7
-→ CFHS_STALE_FENCE
-```
-
-The fence token intentionally remains outside the provider's business arguments. This preserves v0.6 provider idempotency: changing ownership epochs does not change the semantic provider request digest.
-
-A production provider must either support equivalent fencing/precondition semantics or sit behind a gateway that does.
-
-## Distributed transaction coordinator
-
-The canonical v0.7 provider gate now uses `RecoverableSQLiteFencedStateCoordinator` through `TrustKernelV07TransactionalProviderGate`.
-
-The transaction binds:
-
-```text
-transaction id
-semantic intent digest
-replay nonce
-business identity digest
-provider id
-business resource key
-kernel owner id
-lease id
-fence token
-fence expiration
-exact resource pool
-exact units
-exact reservation id
-purpose: EXECUTE | RECONCILE
-status
-monotonic version
-```
-
-### Atomic PREPARE boundary
-
-Before a provider PREPARE can exist, the coordinator verifies the immutable business identity and semantic replay bindings and then acquires, inside one SQLite transaction:
-
-```text
-exact resource capacity
-+
-current distributed ownership epoch
-+
-durable transaction/version journal entry
-```
-
-The inherited v0.6 provider coordinator must consume the **same exact reservation ID**. Any reservation mismatch fails closed.
-
-This removes the prior gap where resource reservation and ownership fencing could be committed independently during PREPARE.
-
-### Authorization ordering
-
-The canonical ordering is:
+Authorization/approval evidence is established before economic/ownership resources are acquired:
 
 ```text
 approval provenance
 → authorization decision
 → authorization evidence anchor
 → distributed transaction PREPARE
-→ provider PREPARE anchor
+    ├── verify business identity
+    ├── verify semantic replay binding
+    ├── reserve exact capacity
+    ├── acquire ownership fence
+    └── journal version 1
+→ provider PREPARE using the same exact reservation
 ```
 
-If authorization anchoring fails, no distributed transaction, exact reservation or fence is created.
+Exact capacity and the ownership epoch are acquired atomically by the reference SQLite coordinator.
 
-## Retryable safe abort
-
-A provider PREPARE failure before execution can safely abort the distributed transaction:
+If provider PREPARE fails safely:
 
 ```text
 PREPARED token 1
-→ safe provider-PREPARE failure
 → exact capacity released
 → fence released
-→ transaction ABORTED
+→ ABORTED
 → retry
 → same transaction ID
-→ new exact reservation
+→ new reservation
 → token 2
-→ PREPARED
 ```
 
-The prior transaction history is retained in the versioned journal.
+If a PREPARED kernel dies, a new kernel can take over only after lease expiry, under a strictly higher token while reusing the existing exact reservation.
 
-Retry cannot silently change the immutable business/replay/provider/resource bindings or exact-unit amount.
+## Forward execution and reconciliation
 
-## Pre-execution takeover
+Immediately before provider invocation the canonical gate revalidates the transaction owner/fence, immutable arguments, business identity, anchored release evidence, replay state, and provider stale-fence guard.
 
-If a kernel dies while holding a PREPARED transaction, another kernel may take over only after the prior lease expires.
+Unknown outcomes stay on the same transaction:
 
 ```text
-kernel A PREPARED / token 1 / reservation X
-→ lease expires
-→ kernel B takeover / token 2 / same reservation X
+T / execution token 1
+→ RECONCILIATION_REQUIRED
+→ release execution epoch
+→ T / reconciliation token 2
+→ provider lookup
+→ COMMITTED | FAILED_NOT_EXECUTED | COMPENSATED
 ```
 
-The resource is not reserved a second time. Kernel A becomes stale and cannot transition or invoke the provider.
+The transaction journal preserves every version, owner and fence epoch.
 
-## Provider execution
+## Distributed compensation safety
 
-Immediately before provider execution, the canonical gate requires:
+Distributed compensation is now implemented rather than blocked.
+
+The reversal is treated as another consequential action with independent governance:
 
 ```text
-replay state = PREPARED
-prepared approval request matches anchored release evidence
-full provider arguments match semantic intent
-transaction status = PREPARED
-transaction owner = current kernel instance
-transaction fence is current and unexpired
-business identity still matches semantic intent/provider
-provider/gateway accepts the current fencing token
+original transaction COMMITTED
+→ separate compensation intent
+→ requester must possess reversal authority
+→ independent multi-party approvals + session provenance
+→ compensation authorization evidence anchored
+→ immutable compensation identity
+→ new compensation fencing epoch
+→ provider/gateway accepts current token
+→ provider-idempotent reversal
 ```
 
-The transaction then advances to `EXECUTING` before the provider call.
+Compensation identity binds:
 
-Terminal outcomes advance the same transaction to:
+```text
+original business identity
+provider
+original provider action id
+compensation operation
+```
+
+### Definite reversal failure
+
+```text
+COMPENSATING
+→ provider proves not executed
+→ transaction returns COMMITTED
+→ fence released
+→ exact used units remain committed
+→ same approved compensation can retry later under a higher fence
+```
+
+### Successful reversal
 
 ```text
 COMMITTED
-FAILED_NOT_EXECUTED
-RECONCILIATION_REQUIRED
+→ COMPENSATING / token N
+→ provider confirms reversal
+→ exact committed units become COMPENSATED
+→ provider/replay state COMPENSATED
+→ business identity COMPENSATED
+→ transaction COMPENSATED
+→ fence released
 ```
 
-The ownership epoch is released after the terminal execution decision.
+All canonical state converges on the same terminal truth.
 
-## Fenced reconciliation ownership
+### Unknown compensation outcome
 
-Unknown provider outcomes remain attached to the same distributed transaction ID.
-
-Reconciliation obtains a new ownership epoch:
+Local accounting is not reversed merely because the transport response was lost:
 
 ```text
-transaction T / execution token 1
-→ provider outcome unknown
-→ T = RECONCILIATION_REQUIRED
-→ execution epoch released
-→ reconciliation takes T with token 2
-→ T = RECONCILING
-→ provider/gateway accepts token 2
-→ provider lookup
-→ T = COMMITTED | FAILED_NOT_EXECUTED | COMPENSATED
+COMPENSATING / token N
+→ outcome unknown
+→ COMPENSATION_RECONCILIATION_REQUIRED
+→ fence released
+→ exact used units remain committed
 ```
 
-Only one active reconciler may own the transaction's business resource. Competing reconciliation fails with `CFHS_FENCE_BUSY`.
-
-A stale execution owner cannot mutate the transaction after reconciliation takeover.
-
-## Versioned transaction journal
-
-Every distributed transaction mutation receives a monotonically increasing transaction version and a journal entry containing:
+Reconciliation then acquires a newer fence:
 
 ```text
-transaction id
-version
-fence token
-owner
-from state
-to state
-event digest
-timestamp
+same transaction T
+→ COMPENSATION_RECONCILING / token N+1
+→ provider compensation lookup
 ```
 
-The journal preserves retry/takeover/reconciliation history rather than overwriting prior ownership epochs.
-
-## Distributed compensation policy
-
-v0.6 compensation remains fully regression-tested as a single-kernel safety mechanism, but the canonical v0.7 runtime **blocks compensation** until compensation receives equivalent transaction/fencing and unknown-outcome reconciliation guarantees.
-
-Attempts return:
+If the provider proves compensation persisted:
 
 ```text
-CFHS_DISTRIBUTED_SAFETY_REQUIRED
+→ exact usage reversed
+→ replay/provider/business identity COMPENSATED
+→ T = COMPENSATED
 ```
 
-This is deliberate fail-closed behavior.
-
-## Canonical runnable v0.7 server
-
-```bash
-python -m kernel.server_v07 \
-  --state-dir <state> \
-  --config examples/kernel.config.json \
-  --policy-dir examples/policies \
-  --kernel-instance-id kernel-a
-```
-
-Default port:
+If the provider proves no compensation exists:
 
 ```text
-8048
+→ T returns COMMITTED
+→ exact usage remains committed
+→ approved compensation remains safely retryable
 ```
 
-Canonical gate:
+Reconciliation-attempt history is retained. A later uncertain retry may reopen the same semantic compensation case without erasing the earlier `CONFIRMED_NOT_EXECUTED` result.
+
+## Canonical API additions
+
+The hardened `/v7/...` API inherits the governed compensation request/execute endpoints and adds:
 
 ```text
-TrustKernelV07TransactionalProviderGate
+POST /v7/provider/compensation/reconcile
 ```
 
-Health reports the canonical gate, kernel instance ID, distributed controls, sandbox provider registry, compensation block, audit/anchor health and bootstrap status.
+The reconciliation request identifies the original `intent_id` and the approved `compensation_intent_id`.
 
-Production credentials remain disabled.
-
-## v0.7 certification surface
+## v0.7 certification
 
 Canonical validator:
 
@@ -296,58 +236,43 @@ Exact-count certified surface:
 102  v0.5/v0.6 regression tests
  28  distributed primitive tests
  17  fenced provider integration tests
- 17  distributed transaction coordinator tests
+ 17  transaction coordinator tests
   6  transaction recovery-hardening tests
- 11  transactional provider-gate integration tests
+ 11  transactional provider integration tests
+ 11  distributed compensation tests
 ---
-181 targeted tests
+192 targeted tests
 ```
 
-Canonical server commit certification:
+Canonical compensation-capable server certification:
 
 ```text
-Run ID: 34043382712
-Commit: 97b42f4136e7240710a3deeff8ae2e0f4729c52e
-Ran 181 tests in 18.097s
-181 PASS
+Run ID: 34044287513
+Commit: 8c2d5fb1b901ce86b809ead454edae7e48a393e3
+Ran 192 tests in 6.165s
+192 PASS
 0 failures
 0 errors
 0 skipped
 exact_test_count = true
 ```
 
-Important integration coverage includes:
+The compensation tests cover independent approvals, authorization-anchor failure, definite provider rejection, safe retry, higher compensation fencing epochs, reversal idempotency, response-loss reconciliation, provider-not-executed reconciliation, reconciliation retry/history, immutable compensation arguments, exact accounting convergence and business-identity convergence.
 
-- business identity versus semantic replay immutability;
-- exact resource capacity + ownership fence atomic PREPARE;
-- rollback of both capacity and fence when PREPARE prerequisites fail;
-- anchored authorization before transactional resource/fence acquisition;
-- one exact reservation shared by transaction and v0.6 provider state;
-- safe PREPARE abort and higher-epoch retry;
-- dead PREPARED-owner takeover after expiration without double reservation;
-- stale-owner execution rejection after takeover;
-- provider/gateway stale-token rejection;
-- same transaction ID through execution and reconciliation;
-- higher reconciliation epoch;
-- versioned journal history;
-- nontransactional PREPARE bypass rejection;
-- distributed compensation fail-closed behavior.
+## What v0.7 still does not claim
 
-## What v0.7 does not claim yet
-
-The canonical SQLite coordinator is a **reference transactional contract**, not a production HA database.
+The SQLite coordinator remains a **reference transactional contract**, not a production HA datastore.
 
 Still pending:
 
-1. production shared/fenced persistence backend interface and implementation preserving these semantics across hosts;
-2. distributed compensation execution and compensation unknown-outcome reconciliation;
-3. ownership/fencing for approval mutation and other shared kernel control-plane state;
-4. exact-unit financial authority thresholds;
-5. production external IdP/MFA authentication-class requirements;
-6. hardened remote audit-anchor authentication/availability;
-7. provider webhook/event reconciliation;
-8. one real provider's identity/fencing/idempotency semantics in test mode only;
-9. migration, network-partition, failover and incident drills.
+1. production shared/fenced persistence backend preserving certified semantics across hosts;
+2. ownership/fencing for approval mutation and other shared kernel control-plane state;
+3. exact-unit financial authority thresholds;
+4. production external IdP/MFA authentication-class requirements;
+5. hardened remote audit-anchor authentication/availability;
+6. provider webhook/event reconciliation;
+7. one real provider's identity/fencing/idempotency semantics in test mode only;
+8. migration, network-partition, failover and incident drills.
 
 ## Production decision
 
@@ -355,16 +280,18 @@ Still pending:
 Business-object identity................ IMPLEMENTED
 Monotonic fencing....................... IMPLEMENTED
 Provider stale-fence guard.............. IMPLEMENTED
-Fenced provider PREPARE................. IMPLEMENTED
-Fenced provider execution............... IMPLEMENTED
-Fenced reconciliation ownership......... IMPLEMENTED
 Atomic exact-capacity + fence PREPARE.... IMPLEMENTED
+Fenced provider execution............... IMPLEMENTED
+Fenced provider reconciliation.......... IMPLEMENTED
 Versioned distributed transaction........ IMPLEMENTED
-Retryable safe abort..................... IMPLEMENTED
-Pre-execution takeover................... IMPLEMENTED
-Canonical transactional v0.7 server...... IMPLEMENTED
-v0.7 certification....................... 181 / 181 PASS
-Distributed compensation................. BLOCKED / PENDING
+Retryable safe abort / takeover.......... IMPLEMENTED
+Distributed compensation governance...... IMPLEMENTED
+Compensation fencing..................... IMPLEMENTED
+Compensation idempotency................. IMPLEMENTED
+Compensation unknown-outcome reconcile... IMPLEMENTED
+Compensation attempt history............. IMPLEMENTED
+Canonical compensation-capable server.... IMPLEMENTED
+v0.7 certification....................... 192 / 192 PASS
 Shared HA persistence backend............ PENDING
 Production credentials................... DENIED
 Production write providers............... DISABLED
@@ -373,4 +300,4 @@ Real provider test mode.................. NOT YET ENABLED
 
 ## Next v0.7 increment
 
-Implement **distributed compensation safety** on the same transaction/fencing model, including compensation business identity, independent authority/approval evidence, a new compensation ownership epoch, provider reversal idempotency and unknown-outcome reconciliation.
+Define and certify the **production shared/fenced persistence contract** so multiple hosts can preserve the same transaction, replay, reservation, fencing and compensation invariants without relying on one SQLite database.
