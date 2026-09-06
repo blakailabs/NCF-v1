@@ -67,7 +67,7 @@
     {
       "id":"payments-primary",
       "resource":"/dev/payments/primary",
-      "provider":"mock-payments",
+      "provider":"sandbox-payments",
       "operations":[
         {
           "name":"payments.refund",
@@ -77,6 +77,34 @@
             "resource_pool_id":"refund-budget",
             "resource_amount_argument":"amount",
             "minimum_approvals":2
+          },
+          "live_adapter_safety":{
+            "provider_id":"sandbox-payments",
+            "sandbox_only":true,
+            "exact_resource":{
+              "pool_id":"refund-usd-minor",
+              "argument":"amount",
+              "unit_kind":"currency_minor",
+              "currency":"USD",
+              "minor_exponent":2
+            },
+            "compensation":{
+              "device_id":"payments-primary",
+              "operation":"payments.refund.reverse",
+              "authorization_action":"payments.refund.reverse"
+            }
+          }
+        },
+        {
+          "name":"payments.refund.reverse",
+          "side_effect_class":"S3",
+          "idempotency_required":true,
+          "action_safety":{
+            "minimum_approvals":2
+          },
+          "live_adapter_safety":{
+            "provider_id":"sandbox-payments",
+            "sandbox_only":true
           }
         }
       ]
