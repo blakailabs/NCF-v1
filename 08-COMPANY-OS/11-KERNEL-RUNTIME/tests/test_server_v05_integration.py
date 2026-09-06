@@ -2,7 +2,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from kernel.action_safety import ResourceRequest
 from kernel.hardening import HardeningError
 from kernel.runtime import CompanyKernel, RequestContext
 from kernel.server_v02 import HardenedKernel
@@ -168,6 +167,11 @@ class ServerV05IntegrationTests(unittest.TestCase):
     def test_restart_recovery_marks_started_uncommitted_s3_unknown(self):
         created = self._refund_intent(nonce="v05-restart-unknown", amount=55)
         intent = self.kernel._load_intent(created["intent"]["intent_id"])
+        self.kernel.action_coordinator.intents.set_status(
+            intent.intent_id,
+            "EXECUTING",
+            self.kernel.action_coordinator.recovery._now(self.core.store.conn),
+        )
         self.kernel.action_replay.reserve(intent.replay_nonce, intent.intent_digest())
         self.kernel.action_resources.reserve_many(intent.intent_id, intent.resource_requests)
         self.kernel.action_audit.prepare(intent)
