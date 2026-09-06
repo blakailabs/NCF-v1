@@ -32,6 +32,7 @@ class ServerV05IntegrationTests(unittest.TestCase):
         self.finance = RequestContext("human:finance", finance["process_id"], "trace:finance")
 
         self.kernel.configure_action_resource_pool(self.owner, "refund-budget", 1000)
+        self.kernel.configure_action_resource_pool(self.owner, "outbound-message-budget", 100)
 
     def tearDown(self):
         try:
@@ -40,7 +41,7 @@ class ServerV05IntegrationTests(unittest.TestCase):
             pass
         self.tmp.cleanup()
 
-    def _refund_intent(self, nonce="v05-refund-001", amount=100):
+    def _refund_intent(self, nonce="v05-refund-001", amount=100, required_approvals=None, resource_requests=None):
         return self.kernel.create_action_intent(
             self.agent,
             "payments-primary",
@@ -49,7 +50,8 @@ class ServerV05IntegrationTests(unittest.TestCase):
             nonce,
             "approved customer refund",
             ["ticket:refund-123"],
-            [{"pool_id": "refund-budget", "amount": amount}],
+            resource_requests,
+            required_approvals,
         )
 
     def test_full_s3_two_party_approval_and_simulated_execution(self):
@@ -57,6 +59,7 @@ class ServerV05IntegrationTests(unittest.TestCase):
         intent_id = created["intent"]["intent_id"]
         self.assertEqual(created["intent"]["side_effect_class"], "S3")
         self.assertEqual(created["intent"]["required_approvals"], 2)
+        self.assertEqual(created["intent"]["resource_requests"], [{"pool_id": "refund-budget", "amount": 100.0}])
 
         request = self.kernel.request_action_approval(
             self.agent,
@@ -80,6 +83,19 @@ class ServerV05IntegrationTests(unittest.TestCase):
         replay = self.kernel.action_replay.get(created["intent"]["replay_nonce"])
         self.assertEqual(replay["status"], "COMMITTED")
 
+    def test_caller_cannot_lower_s3_approval_floor(self):
+        created = self._refund_intent(nonce="v05-approval-floor", required_approvals=0)
+        self.assertEqual(created["intent"]["required_approvals"], 2)
+
+    def test_caller_cannot_override_kernel_derived_resource_reservation(self):
+        with self.assertRaises(HardeningError) as cm:
+            self._refund_intent(
+                nonce="v05-resource-bypass",
+                amount=100,
+                resource_requests=[{"pool_id": "refund-budget", "amount": 1}],
+            )
+        self.assertEqual(cm.exception.code, "CFHS_POLICY_DENIED")
+
     def test_s3_cannot_execute_without_required_approvals(self):
         created = self._refund_intent(nonce="v05-refund-no-approval")
         with self.assertRaises(HardeningError) as cm:
@@ -102,6 +118,27 @@ class ServerV05IntegrationTests(unittest.TestCase):
         with self.assertRaises(HardeningError):
             self.kernel.approve_action(self.owner, request["request_id"])
 
+    def test_s3_approval_request_requires_enough_explicit_eligible_approvers(self):
+        created = self._refund_intent(nonce="v05-too-few-eligible")
+        with self.assertRaises(HardeningError) as cm:
+            self.kernel.request_action_approval(
+                self.agent,
+                created["intent"]["intent_id"],
+                ["human:risk"],
+            )
+        self.assertEqual(cm.exception.code, "CFHS_INVALID_REQUEST")
+
+    def test_device_substitution_is_rejected(self):
+        created = self._refund_intent(nonce="v05-device-bind")
+        with self.assertRaises(HardeningError) as cm:
+            self.kernel.execute_simulated_action(
+                self.agent,
+                created["intent"]["intent_id"],
+                "mail-primary",
+                {"amount": 100},
+            )
+        self.assertEqual(cm.exception.code, "CFHS_CONFLICT")
+
     def test_s2_requires_declared_compensation_then_can_execute(self):
         created = self.kernel.create_action_intent(
             self.agent,
@@ -115,6 +152,7 @@ class ServerV05IntegrationTests(unittest.TestCase):
         )
         intent_id = created["intent"]["intent_id"]
         self.assertEqual(created["intent"]["side_effect_class"], "S2")
+        self.assertEqual(created["intent"]["resource_requests"], [{"pool_id": "outbound-message-budget", "amount": 1.0}])
 
         with self.assertRaises(HardeningError) as cm:
             self.kernel.execute_simulated_action(
@@ -138,6 +176,7 @@ class ServerV05IntegrationTests(unittest.TestCase):
             {"to": "example.invalid", "resource_amount": 1},
         )
         self.assertEqual(result["status"], "COMMITTED")
+        self.assertEqual(self.kernel.action_resources.pool_state("outbound-message-budget")["used"], 1)
 
     def test_s2_provider_failure_runs_simulated_compensation(self):
         created = self.kernel.create_action_intent(
@@ -163,6 +202,7 @@ class ServerV05IntegrationTests(unittest.TestCase):
             )
         self.assertEqual(cm.exception.code, "CFHS_DEVICE_FAILED")
         self.assertEqual(self.kernel.action_replay.get("v05-mail-failure")["status"], "FAILED")
+        self.assertEqual(self.kernel.action_resources.pool_state("outbound-message-budget")["used"], 0)
 
     def test_restart_recovery_marks_started_uncommitted_s3_unknown(self):
         created = self._refund_intent(nonce="v05-restart-unknown", amount=55)
