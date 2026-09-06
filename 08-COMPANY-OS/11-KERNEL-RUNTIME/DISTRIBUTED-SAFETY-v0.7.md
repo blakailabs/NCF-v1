@@ -11,177 +11,208 @@ v0.6 proved provider-shaped consequential execution on a single durable kernel r
 
 v0.7 begins the transition from **single-kernel correctness** to **distributed ownership correctness**.
 
-The first two primitives are intentionally coupled:
-
-1. **Business-object identity** answers: *what real-world object/action are we actually trying to affect?*
-2. **Fencing** answers: *which kernel execution epoch currently owns the right to affect it?*
-
-A replay nonce alone cannot answer either question.
-
-## Threat being addressed
-
-Without business identity:
+The first safety boundary is now implemented end to end:
 
 ```text
-same refund
-+ different caller replay nonce
-→ can appear to be a new action
+BusinessObjectIdentity
+→ DistributedActionPermit
+→ fenced provider PREPARE
+→ current fence revalidation
+→ provider/gateway stale-token guard
+→ provider invocation
+→ terminal state / reconciliation
+→ separately fenced reconciliation epoch
 ```
 
-Without fencing:
+## Business-object identity
+
+Each consequential operation declares a versioned identity contract describing the real-world target independently of caller replay nonce.
+
+Reference refund contract:
 
 ```text
-kernel A acquires work
-→ kernel A pauses/network partitions
-→ kernel B takes over
-→ kernel A resumes with still-valid credentials
-→ both can attempt the side effect
+payments.refund.target/v1
+→ provider_account_id
+→ charge_id
+→ refund_reference
 ```
 
-v0.7 begins closing both classes of failure.
-
-## Business-object identity contract
-
-Each consequential operation declares a versioned identity contract.
-
-Example:
-
-```text
-contract: payments.refund.target/v1
-operation: payments.refund
-identity fields:
-  provider_account_id
-  charge_id
-  refund_reference
-```
-
-The business identity digest binds:
-
-```text
-contract id
-+ contract version
-+ operation
-+ digest(identity field values)
-```
-
-Raw identity values are not persisted by the reference ledger.
+The identity digest binds contract ID, contract version, operation and the digest of the declared identity fields. Raw business identity values are not stored by the distributed identity ledgers.
 
 ### Semantic binding rule
 
 ```text
-one business-object identity
-→ one semantic intent
+same business identity + same semantic intent
+→ idempotent
+
+same business identity + different semantic intent
+→ CFHS_BUSINESS_IDENTITY_CONFLICT
+
+same semantic intent + different business identity
+→ CFHS_BUSINESS_IDENTITY_CONFLICT
 ```
 
-Same business identity + same semantic intent is idempotent.
+This closes the gap where the same real-world action could be resubmitted under a new replay nonce and appear unrelated.
 
-Same business identity + different semantic intent fails with:
+## Monotonic fencing
+
+Each distributed business resource receives a monotonically increasing ownership epoch:
 
 ```text
-CFHS_BUSINESS_IDENTITY_CONFLICT
+kernel A owns action → token 1
+lease expires
+kernel B takes over → token 2
+kernel A resumes with token 1 → stale / rejected
 ```
 
-Likewise, one semantic intent cannot silently be rebound to a different business identity.
+Tokens do not decrease or get reused for later ownership epochs.
 
-### Why amount is not automatically identity
+The reference SQLite implementation persists the last issued epoch separately from the active lease so a clean release still causes the next owner to receive a higher token.
 
-A generic kernel cannot guess which arguments define business uniqueness.
+## Provider-side stale-fence rejection
 
-For example, changing `amount` may or may not represent a new legitimate refund depending on the provider/business contract. Therefore each application/provider operation must explicitly declare its identity fields rather than letting the kernel infer them.
+Kernel ownership checks alone are insufficient if a stale kernel can still reach a provider with valid credentials.
 
-## Fencing contract
-
-Each distributed action obtains a monotonic fencing token for its business-object resource.
+v0.7 therefore models an independent provider/gateway guard:
 
 ```text
-resource epoch 1 → fence token 1
-lease expires / ownership changes
-resource epoch 2 → fence token 2
+highest provider-observed fence = 8
+request arrives with fence = 7
+→ CFHS_STALE_FENCE
 ```
 
-Tokens never decrease or get reused for a later ownership epoch.
+The fence token is intentionally **not added to the provider's business arguments**. That preserves v0.6 provider idempotency: ownership epochs can change without changing the semantic provider request digest.
 
-A stale owner carrying token `1` must fail after token `2` becomes current, even if the stale owner still possesses valid credentials.
+A production provider must either support equivalent precondition/fencing semantics or sit behind a gateway that does.
 
-### Reference states
+## Durable distributed provider permit
 
-The reference SQLite store persists:
-
-```text
-resource key
-last issued token
-current token
-owner
-lease id
-acquired time
-expiration
-```
-
-The SQLite backend is a **contract/reference implementation**, not the intended HA production store.
-
-A production shared backend must preserve equivalent atomicity, monotonicity and stale-owner rejection semantics.
-
-## Provider-side fencing
-
-Kernel-side ownership checks are not sufficient if a stale kernel can still call an external provider directly.
-
-The provider boundary therefore needs a stale-token rejection contract:
-
-```text
-provider has observed token 8
-request arrives with token 7
-→ reject CFHS_STALE_FENCE
-```
-
-A production provider must either support an equivalent fencing/precondition primitive or be placed behind a gateway that enforces it.
-
-Credentials alone are never proof of current distributed ownership.
-
-## Distributed action permit
-
-The initial v0.7 permit binds:
+The permit history binds:
 
 ```text
 business identity digest
-business identity contract/version
+identity contract/version
 operation
 semantic intent digest
 provider id
-fence resource
-fence owner
+business resource key
+kernel instance owner
 lease id
-monotonic fence token
+fence token
 lease expiration
+purpose: EXECUTE | RECONCILE
+status: ACTIVE | RELEASED | STALE
 ```
 
-Before advancing the business state, the guard revalidates:
+A provider action cannot execute merely because its v0.6 replay state is PREPARED. It must also have an active, unexpired permit owned by the current kernel instance.
 
-1. the fence is still current and unexpired;
-2. the business identity is still bound to the same semantic intent/provider.
+## Provider PREPARE integration
 
-A stale permit cannot advance state after another owner takes over.
+The v0.7 provider policy now declares both the business identity contract and fence TTL.
 
-## Initial state model
+During provider PREPARE:
 
-Business-object action state:
+1. complete arguments must still match the immutable semantic intent;
+2. business identity must remain bound to that semantic intent/provider;
+3. the kernel acquires or reuses a current execution fence;
+4. v0.6 authorization, approval provenance, exact-resource reservation and audit PREPARE execute normally;
+5. if PREPARE fails, the distributed fence is released and the business object remains `BOUND`.
+
+A second kernel cannot prepare the same business action while the active execution fence remains valid.
+
+After lease expiry, another kernel may take over and receives a strictly higher fencing token.
+
+## Provider execution integration
+
+Immediately before provider execution, v0.7 requires:
+
+```text
+replay state = PREPARED
+prepared approval request still matches anchored release evidence
+full provider arguments still match semantic intent
+active permit belongs to this kernel instance
+permit fence is still current/unexpired
+business identity still matches semantic intent/provider
+provider/gateway accepts fence token
+```
+
+Only after those checks does the inherited v0.6 provider execution path run.
+
+Business state then follows the provider result:
 
 ```text
 BOUND
 → EXECUTING
 → COMMITTED
+or FAILED_NOT_EXECUTED
+or RECONCILIATION_REQUIRED
 ```
 
-Failure/recovery branches:
+Terminal execution permits are released. A stale kernel cannot invoke the sandbox provider after another kernel has taken over.
+
+## Fenced reconciliation ownership
+
+An uncertain provider outcome releases the execution fence and places both replay and business identity into `RECONCILIATION_REQUIRED`.
+
+Reconciliation then acquires a **new ownership epoch**:
 
 ```text
-BOUND → FAILED_NOT_EXECUTED
-EXECUTING → FAILED_NOT_EXECUTED
-EXECUTING → RECONCILIATION_REQUIRED
-RECONCILIATION_REQUIRED → COMMITTED
-RECONCILIATION_REQUIRED → FAILED_NOT_EXECUTED
-RECONCILIATION_REQUIRED → COMPENSATED
-COMMITTED → COMPENSATED
+execution token 1
+→ unknown outcome
+→ execution fence released
+→ reconciliation token 2
+→ provider/gateway accepts token 2
+→ provider lookup
+→ business/replay/resource state reconciled
 ```
+
+Only one active reconciler may hold the business resource fence. A competing reconciler fails with `CFHS_FENCE_BUSY`.
+
+The reconciliation fence is released after the provider truth is applied.
+
+## Distributed compensation policy
+
+v0.6 compensation remains fully tested as a single-kernel safety mechanism, but the v0.7 distributed runtime **blocks compensation** until compensation receives the same fencing and unknown-outcome reconciliation guarantees.
+
+Attempts return:
+
+```text
+CFHS_DISTRIBUTED_SAFETY_REQUIRED
+```
+
+This is intentional fail-closed behavior, not a missing fallback.
+
+## Runnable v0.7 server
+
+Canonical distributed reference launcher:
+
+```bash
+python -m kernel.server_v07 \
+  --state-dir <state> \
+  --config examples/kernel.config.json \
+  --policy-dir examples/policies \
+  --kernel-instance-id kernel-a
+```
+
+Default port:
+
+```text
+8048
+```
+
+The server exposes `/v7/...` aliases for the hardened provider API and requires an explicit stable kernel instance ID.
+
+Health reports:
+
+- distributed safety version;
+- kernel instance ID;
+- registered sandbox providers;
+- distributed controls;
+- compensation distributed-safety block;
+- audit/anchor health;
+- bootstrap status.
+
+Production credentials remain disabled.
 
 ## v0.7 validation surface
 
@@ -192,62 +223,80 @@ cd 08-COMPANY-OS/11-KERNEL-RUNTIME
 PYTHONPATH=. python scripts/validate_v07.py
 ```
 
-Expected surface:
+Certified exact-count surface:
 
 ```text
 102 v0.5/v0.6 regression tests
-+ 28 distributed-safety tests
-= 130 targeted tests
++ 28 distributed primitive tests
++ 17 distributed provider integration tests
+= 147 targeted tests
 ```
 
-The validator fails if the exact test count is not 130.
+Certified GitHub Actions result:
 
-## Initial adversarial coverage
+```text
+Ran 147 tests
+147 PASS
+0 failures
+0 errors
+0 skipped
+exact_test_count = true
+```
 
-The first v0.7 suite covers:
+The integration tests specifically verify:
 
-- deterministic identity derivation;
-- contract-version isolation;
-- operation isolation;
-- missing/null/non-finite identity rejection;
-- dotted identity paths;
-- duplicate identity-field policy rejection;
-- identity-to-semantic-action immutability;
-- semantic-intent-to-identity immutability;
-- no raw business identity value persistence;
-- first fencing epoch;
-- active-owner contention;
-- lease renewal;
-- expired-lease non-revival;
-- monotonic token takeover;
-- stale owner assertion/release rejection;
-- token monotonicity after clean release;
-- provider stale-token rejection;
-- distributed action state advancement only under current ownership;
-- stale distributed permit rejection after takeover.
+- business identity is bound before provider intent duplication;
+- same business identity under a different nonce/semantic action is rejected;
+- provider PREPARE acquires an execution fence;
+- PREPARE failure releases the fence;
+- a competing kernel cannot prepare under an active lease;
+- takeover after expiry receives a higher token;
+- the stale kernel cannot execute after takeover;
+- the takeover kernel can execute and commit;
+- the provider/gateway rejects the old token after a newer epoch is observed;
+- timeout releases the execution fence and enters business reconciliation;
+- reconciliation uses a new higher fence and commits provider truth;
+- a competing reconciler is blocked;
+- bypassing distributed PREPARE cannot reach the provider;
+- altered arguments cannot acquire a fence;
+- compensation is blocked until distributed integration;
+- status exposes business identity and permit history.
 
-## What this does not claim yet
+## What remains inside v0.7
 
-This is not yet a distributed database implementation.
+The first distributed provider execution boundary is complete. v0.7 is not yet a production distributed database/runtime.
 
-Still pending inside v0.7:
+Still pending:
 
-- shared production fence/replay/resource persistence interface and backend contract;
-- atomic coordination between business identity, replay, resource reservation and fence ownership;
-- fencing of approval/provider/reconciliation ownership;
-- compensation unknown-outcome reconciliation;
-- exact-unit authority thresholds;
-- production external identity/MFA policy requirements;
-- real provider test-mode business identity/fencing semantics;
-- migration/failover/partition drills.
+1. shared/fenced persistence interface and production backend contract;
+2. atomic coordination among business identity reservation, replay reservation, exact-resource reservation and fence ownership;
+3. fencing/ownership contracts for approval mutation and other shared state beyond provider execution/reconciliation;
+4. distributed compensation execution and compensation unknown-outcome reconciliation;
+5. exact-unit financial authority thresholds;
+6. production external identity/MFA authentication-class requirements;
+7. hardened remote audit-anchor authentication/availability;
+8. provider webhook/event reconciliation;
+9. one real provider's business identity/fencing/idempotency semantics in test mode only;
+10. migration, network-partition, failover and incident drills.
 
 ## Production decision
 
 ```text
-v0.7 primitives...................... IN DEVELOPMENT
-Production credentials............... DENIED
-Production write providers........... DISABLED
-Real provider test mode............... NOT YET ENABLED
+Business-object identity.............. IMPLEMENTED
+Monotonic fencing..................... IMPLEMENTED
+Provider stale-fence guard............ IMPLEMENTED
+Fenced provider PREPARE............... IMPLEMENTED
+Fenced provider execution............. IMPLEMENTED
+Fenced reconciliation ownership....... IMPLEMENTED
+Runnable v0.7 reference server........ IMPLEMENTED
+v0.7 certification.................... 147 / 147 PASS
+Distributed compensation.............. BLOCKED / PENDING
+Shared HA persistence................. PENDING
+Production credentials................ DENIED
+Production write providers............ DISABLED
+Real provider test mode................ NOT YET ENABLED
 ```
 
-The next v0.7 increment should add a shared/fenced persistence interface and make the existing v0.6 provider-action/reconciliation lifecycle consume a `DistributedActionPermit` before any provider invocation.
+## Next v0.7 increment
+
+Define the **shared/fenced persistence contract** and transaction coordinator so the currently separate safety records—business identity, replay, exact resource reservation and ownership fence—can be committed/recovered under one distributed transaction/epoch model.
