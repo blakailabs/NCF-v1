@@ -14,9 +14,9 @@ blakailabs/Company-Operating-System
 
 ## Status
 
-**Pending administrative GitHub rename.**
+**Pending one administrative GitHub repository rename.**
 
-The connected GitHub tooling can modify branches, files, commits, pull requests, tests, and workflows, but does not expose repository-name mutation. A fallback attempt to create a GitHub tracking issue was rejected by GitHub because the connected account currently requires at least one verified email address for issue creation.
+The connected GitHub tooling can modify branches, files, commits, pull requests, issues, tests, and workflows, but it does **not** expose the repository-name mutation endpoint. The prior account-email blocker is resolved; the remaining limitation is specifically the connector's lack of repository-admin rename support.
 
 ## Why the rename is correct
 
@@ -31,7 +31,19 @@ Company Operating System
 ├── Company Kernel API
 ├── Company Kernel Runtime
 ├── Kernel Hardening
-└── Kernel Trust Layer
+└── Kernel Trust / Safety Layers
+```
+
+## GitHub Settings action
+
+In the GitHub repository UI:
+
+```text
+Settings
+→ General
+→ Repository name
+→ Company-Operating-System
+→ Rename
 ```
 
 ## After the GitHub rename
@@ -41,3 +53,4 @@ Company Operating System
 3. Update the repository description to: `A governed operating system for AI-native companies.`
 4. Preserve NCF terminology for the constitutional layer.
 5. Re-run Company Kernel CI after the rename.
+6. Update `RUNTIME-STATUS.md` to remove the historical-slug rename-pending note.
