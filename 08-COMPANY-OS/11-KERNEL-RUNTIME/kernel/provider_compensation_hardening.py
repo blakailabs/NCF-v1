@@ -41,6 +41,7 @@ class TrustKernelV06FinalGate(TrustKernelV06ExecutionGate):
             compensation["compensation_operation"],
         )
         self._live_profile(comp_device, comp_operation, require_exact=False)
+        comp_resource = comp_device.get("resource", f"/dev/{compensation['compensation_device_id']}")
         side = str(comp_operation.get("side_effect_class", "S0"))
         safety = comp_operation.get("action_safety") or {}
         policy_minimum = int(safety.get("minimum_approvals", 2 if side == "S3" else 1))
@@ -48,6 +49,18 @@ class TrustKernelV06FinalGate(TrustKernelV06ExecutionGate):
         effective_required = max(policy_minimum, requested)
         if effective_required < 1:
             raise HardeningError("CFHS_INVALID_POLICY", "Provider compensation must require independent approval")
+
+        # Do not create an approval workflow for a principal/process that has no
+        # base authority to execute the compensation after approvals are collected.
+        base_decision = self.authorize(
+            ctx,
+            compensation["authorization_action"],
+            comp_resource,
+            arguments,
+        )
+        if base_decision.get("decision") != "ALLOW":
+            code = "CFHS_ELEVATION_REQUIRED" if base_decision.get("decision") == "ELEVATION_REQUIRED" else "CFHS_POLICY_DENIED"
+            raise HardeningError(code, "Requester lacks base authority for the compensating provider operation", base_decision)
 
         decision = self.authorize(
             ctx,
@@ -71,7 +84,7 @@ class TrustKernelV06FinalGate(TrustKernelV06ExecutionGate):
             provider_action_id,
             compensation["compensation_device_id"],
             compensation["compensation_operation"],
-            comp_device.get("resource", f"/dev/{compensation['compensation_device_id']}"),
+            comp_resource,
             side,
             arguments,
             effective_required,
@@ -133,7 +146,7 @@ class TrustKernelV06FinalGate(TrustKernelV06ExecutionGate):
                 "CFHS_ELEVATION_REQUIRED",
                 "S3 provider compensation requires a separately approved compensation intent",
             )
-        original, compensation_binding, _operation, _profile = self._bound_provider_context(intent_id)
+        original, _binding, _operation, _profile = self._bound_provider_context(intent_id)
         replay = self.provider_replay.require_intent(original.replay_nonce, original.intent_digest())
         if replay["status"] == "COMPENSATED":
             return {
