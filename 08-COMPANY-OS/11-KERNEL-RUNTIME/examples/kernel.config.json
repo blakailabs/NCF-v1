@@ -34,7 +34,21 @@
       "active": true,
       "capabilities": [
         {"id":"cap-mail-send","action":"mail.send","resource":"/dev/mail/primary","conditions":{"resource_type":"outbound_messages","hard_limit":100}},
-        {"id":"cap-refund","action":"payments.refund","resource":"/dev/payments/primary","conditions":{"max_amount":250}},
+        {
+          "id":"cap-refund",
+          "action":"payments.refund",
+          "resource":"/dev/payments/primary",
+          "conditions":{
+            "max_amount":250,
+            "exact_authority":{
+              "argument":"amount",
+              "unit_kind":"currency_minor",
+              "currency":"USD",
+              "minor_exponent":2,
+              "max_units":25000
+            }
+          }
+        },
         {"id":"cap-http-readonly","action":"http.get","resource":"/dev/http/readonly"},
         {"id":"cap-github-readonly","action":"github.repo.read","resource":"/dev/github/readonly"},
         {"id":"cap-event-publish","action":"event.publish","resource":"/run/ipc/company.*"},
