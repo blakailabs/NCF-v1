@@ -3,30 +3,23 @@
 **Project:** Company Operating System  
 **Branch:** `feature/company-kernel-ha-persistence-v0.8`  
 **Base:** merged v0.7 checkpoint `25382c018e8bf3cfe426940afc8f622b526ba191`  
-**Status:** active engineering milestone; no real production HA backend or production credentials enabled
+**Status:** active draft PR #4; no real production HA backend or production credentials enabled
 
 ## Purpose
 
-v0.8 addresses a critical distinction left explicit in v0.7:
+v0.8 distinguishes a semantic backend contract from a deployed HA system. Company OS does not certify HA from capability flags or configuration claims alone.
 
-> A backend interface can satisfy a semantic contract in tests without the deployed system being highly available or safe under real distributed failure.
-
-Therefore Company OS does not certify HA from capability flags alone.
-
-Production readiness requires four independently meaningful layers:
+Production readiness requires:
 
 ```text
-1. backend capability contract
-2. deployment/topology evidence
-3. observed behavioral probes
-4. trusted deployment attestation
+backend capability contract
++ independently sourced topology/deployment evidence
++ actively observed behavioral probes
++ trusted external attestation
++ time-bounded certification lifecycle
 ```
 
-A failure in any layer keeps production shared persistence disabled.
-
-## Evidence-first architecture
-
-This milestone follows `EVIDENCE-AND-STRUCTURE-DOCTRINE.md`:
+## Evidence-first rule
 
 ```text
 Reality first.
@@ -35,70 +28,34 @@ Automation third.
 AI last.
 ```
 
-The HA design distinguishes universal distributed-systems requirements from Company OS release policy. For example, minimum voter/failure-domain counts are policy choices; read-consistency models are represented explicitly so leader-linearizable systems are not incorrectly forced into quorum-read semantics.
+Universal distributed-systems properties are kept distinct from Company OS release policy. For example, minimum voting-member/failure-domain counts are release policy; read models are represented explicitly as quorum, leader-linearizable or serializable-transaction semantics.
 
-## Backend capability contract
+## HA production-readiness contract
 
-The inherited v0.7 shared persistence contract requires:
+`kernel/ha_persistence.py` models backend/cluster identity, monotonic topology epoch, voting membership, health/failure domains, consensus protocol, write quorum, read consistency, synchronous commit/acks, authoritative time, lease time, split-brain protection, behavioral probes and independent attestation.
 
-```text
-serializable transactions
-compare-and-swap
-monotonic fencing
-durable ordered journal
-multi-connection visibility
-synchronous durability
-authoritative time
-distributed quorum
-```
+## Certification lifecycle
 
-Those properties are necessary but no longer sufficient for production certification.
-
-## Deployment evidence
-
-`kernel/ha_persistence.py` defines `HADeploymentEvidence`.
-
-Evidence binds:
+`kernel/ha_certification_runtime.py` prevents HA readiness from becoming a timeless boolean.
 
 ```text
-backend_id
-cluster_id
-topology_epoch
-observation time
-member identities
-voting membership
-member health
-failure domains
-consensus protocol
-write quorum
-read consistency mode/read quorum
-synchronous commit policy
-synchronous acknowledgement count
-authoritative time source
-lease time source
-split-brain protection
-behavioral probe set
-evidence issuer
-evidence nonce
+ACTIVE
+→ SUPERSEDED by higher topology epoch
+→ INVALIDATED explicitly
+→ unusable after valid_until
 ```
 
-## Read consistency
+Rules include cluster-identity continuity, topology rollback protection, evidence-nonce replay protection, same-epoch conflict protection and backend-authoritative expiry checks.
 
-Accepted evidence models:
+`CertifiedSharedPersistence` refuses shared-state access without a current active certification.
 
-```text
-quorum
-leader_linearizable
-serializable_transaction
-```
+The SQLite certification ledger is reference lifecycle machinery only; it is not claimed as the production HA control plane.
 
-For quorum reads, read/write quorum intersection must be demonstrated.
+## Active conformance probes
 
-For leader-linearizable or serializable-transaction reads, a valid linearizable read path must be present without pretending that every read requires majority quorum.
+`ResilientHAConformanceProbeHarness` generates evidence from observed multi-client behavior.
 
-## Behavioral probes
-
-Required fresh probe evidence:
+Required probe identities:
 
 ```text
 serializable_transaction
@@ -113,111 +70,63 @@ stale_owner_rejected_after_takeover
 network_partition_single_writer
 ```
 
-The first v0.8 implementation validates the structure and freshness of those probes. The next increment will actively generate them through a conformance harness.
+Ordinary probes exercise client operations directly. Fault probes require a separate `HAChaosController` so the storage client cannot self-assert that a partition or quorum loss occurred.
 
-## Trusted attestation
+No chaos controller means the relevant probes are BLOCKED, no positive probe evidence is emitted, and production certification remains incomplete.
 
-Deployment evidence must be independently attested and bound to the exact evidence digest.
+Per-probe exceptions are preserved as negative evidence instead of aborting the complete run.
 
-Accepted reference verification classes:
+## Digest-bound topology + probe evidence
+
+`kernel/ha_evidence_pipeline.py` introduces `HATopologySnapshot` and `HAEvidenceAssembler`.
+
+A topology snapshot includes the operational HA fields plus source provenance:
+
+```text
+source_id
+source_class
+source_receipt_digest
+```
+
+Accepted source classes:
 
 ```text
 provider_control_plane
-cluster_consensus_attestation
+cluster_consensus
 independent_observer
 ```
 
-Attestation must be fresh and complete. Missing, failed, stale, digest-mismatched or unsupported attestation fails production certification.
-
-## Certification lifecycle
-
-`kernel/ha_certification_runtime.py` prevents HA readiness from becoming a timeless boolean.
-
-`SQLiteHACertificationLedger` models lifecycle rules:
+The assembler requires:
 
 ```text
-ACTIVE
-→ SUPERSEDED by higher topology epoch
-or
-→ INVALIDATED
-or
-→ unusable after valid_until
+topology backend_id == probe report backend_id
+valid topology source receipt digest
+known/unique probe identities
+bounded topology/probe observation skew
+blocked/failed/missing probe propagation
 ```
 
-The SQLite ledger is a **reference implementation of lifecycle semantics only**. Equivalent production certification state must ultimately live behind a certified shared control-plane backend.
-
-### Rollback protection
+The final `HADeploymentEvidence.evidence_nonce` is derived from:
 
 ```text
-cluster ID change................ REJECT
-lower topology epoch............. REJECT
-same epoch + different evidence.. REJECT
-same nonce + different evidence.. REJECT
-higher epoch..................... SUPERSEDE
-same nonce + same evidence........ IDEMPOTENT
+SHA256(
+  topology_digest
+  + topology_source_receipt_digest
+  + probe_report_digest
+)
 ```
 
-### Evidence-bounded lifetime
+Callers cannot choose a nonce that disconnects certification from the observed source material.
 
-`valid_until` is derived from the oldest supporting:
-
-```text
-deployment observation
-behavioral probe observation
-trusted attestation verification
-```
-
-plus the configured maximum evidence age.
-
-A certificate cannot outlive the evidence that justified it.
-
-## Authoritative time
-
-The guarded runtime uses:
-
-```text
-backend.authoritative_now()
-```
-
-for certification validity checks.
-
-Client wall-clock time cannot become lease/certification authority in production HA mode.
-
-## Guarded shared persistence
-
-`CertifiedSharedPersistence` places an HA certificate check in front of every shared-state operation.
-
-```text
-operation request
-→ obtain backend-authoritative time
-→ require ACTIVE, unexpired HA certificate
-→ only then call shared backend
-```
-
-Covered operations include reads, writes, CAS, fencing, journals and atomic fenced mutations.
-
-If certification is invalidated or expires, subsequent access stops immediately.
-
-## SQLite remains a negative-control reference
-
-The existing SQLite shared backend deliberately fails the production capability contract because it lacks:
-
-```text
-authoritative distributed time
-distributed quorum
-```
-
-Perfect-looking deployment evidence cannot override those missing capabilities.
-
-This prevents evidence/configuration from falsely upgrading a non-HA backend.
+A blocked probe is omitted from positive `HAProbeEvidence` and recorded as an assembly blocker. A failed probe remains explicit negative evidence and causes the certifier to deny production readiness.
 
 ## Current certification
 
 ```text
-Run ID: 34055983029
-Commit: f0dc98080ed28b60c4d0c717c1e8c1b7f2e6cdcd
-Ran 300 tests in 6.246s
-300 / 300 PASS
+Run ID: 34056548949
+Commit: c1b92423093ac1266b14e25e7624a702fdc4c7ff
+Ran 325 tests in 21.091s
+325 / 325 PASS
 0 failures
 0 errors
 0 skipped
@@ -225,34 +134,50 @@ exact_test_count = true
 successful = true
 ```
 
-Exact-count surface:
+Exact surface:
 
 ```text
-264  frozen v0.5-v0.7 regression tests
+264  frozen v0.5-v0.7 regressions
  21  HA production-readiness tests
- 15  certification lifecycle/runtime guard tests
+ 15  HA certification lifecycle/runtime guard tests
+ 14  active conformance probe-harness tests
+ 11  digest-bound evidence-pipeline tests
 ---
-300 targeted tests
+325 targeted tests
 ```
 
-## What 300/300 does NOT certify
+## What 325/325 does NOT certify
 
 ```text
-A real Postgres/Cockroach/Spanner/etc. cluster..... NOT TESTED
-Actual network-partition behavior.................. NOT TESTED
-Actual quorum-loss behavior........................ NOT TESTED
-Actual provider control-plane attestation.......... NOT CONNECTED
-Production certification shared control plane...... NOT IMPLEMENTED
+A real distributed SQL/consensus backend.......... NOT ENABLED
+Actual provider topology source.................... NOT CONNECTED
+Actual chaos/partition controller.................. NOT CONNECTED
+Production shared certification control plane...... NOT IMPLEMENTED
 Production credentials............................. DISABLED
 Production writes.................................. DISABLED
 ```
 
-The 300-test checkpoint certifies the **contract, decision rules and reference lifecycle behavior**, not a real production cluster.
+Reference tests prove the contracts and rejection behavior; they do not upgrade SQLite or any simulated target to production HA.
 
-## Next increment
+## Next boundary — bootstrap trust without circularity
 
-Implement a provider-neutral **active conformance/probe harness** that produces `HAProbeEvidence` from observed behavior.
+Production certification state ultimately must live in a shared control plane, but the first certification cannot require an already-active certification merely to initialize itself.
 
-Non-destructive probes should actively exercise transaction isolation, CAS, fencing, journal ordering, multi-client visibility and backend time.
+The next design therefore uses a **narrow external bootstrap permit**, not a general bypass.
 
-Partition/quorum probes must require a separate explicit chaos/fault controller. If a backend cannot provide controlled fault evidence, those probes remain missing and production certification remains denied.
+The permit must be:
+
+```text
+short lived
+one time
+independently verified
+bound to exact backend_id
+bound to exact cluster_id
+bound to exact topology_epoch
+bound to exact evidence_digest
+bound to exact certification_digest
+bound to a single bootstrap purpose
+replay protected
+```
+
+It may authorize only initialization of the reserved HA-certification control state. It must never authorize arbitrary application/kernel writes.
