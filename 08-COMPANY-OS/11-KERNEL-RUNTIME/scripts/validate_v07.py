@@ -9,14 +9,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 246
+EXPECTED_TARGETED_TESTS = 252
 TESTS = [
-    # v0.5 regression surface
     "test_action_safety_v05",
     "test_action_crash_recovery_v05",
     "test_action_reconciliation_v05",
     "test_server_v05_integration",
-    # v0.6 live-adapter safety surface
     "test_live_adapter_safety_v06",
     "test_v06_trust_bindings",
     "test_provider_action_hardening_v06",
@@ -24,7 +22,6 @@ TESTS = [
     "test_provider_execution_gate_v06",
     "test_provider_compensation_gate_v06",
     "test_provider_replay_restart_v06",
-    # v0.7 distributed safety surface
     "test_distributed_safety_v07",
     "test_distributed_provider_gate_v07",
     "test_distributed_state_v07",
@@ -36,6 +33,7 @@ TESTS = [
     "test_exact_authority_v07",
     "test_production_identity_v07",
     "test_remote_anchor_hardening_v07",
+    "test_remote_anchor_config_v07",
 ]
 
 
@@ -46,12 +44,10 @@ def main() -> int:
 
     sys.path.insert(0, str(ROOT))
     sys.path.insert(0, str(ROOT / "tests"))
-
     loader = unittest.defaultTestLoader
     suite = unittest.TestSuite()
     for module in TESTS:
         suite.addTests(loader.loadTestsFromName(module))
-
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     exact_test_count = result.testsRun == EXPECTED_TARGETED_TESTS
     successful = compile_ok and result.wasSuccessful() and exact_test_count
@@ -101,9 +97,11 @@ def main() -> int:
             "N-of-M audit-anchor quorum",
             "durable partial anchor receipts",
             "replay-safe anchor reconciliation",
+            "fail-closed remote anchor runtime config",
         ],
         "reference_backend_production_ready": False,
         "production_identity_policy_available": True,
+        "authenticated_quorum_anchor_available": True,
         "reference_anchor_crypto_production_ready": False,
     }
     print("\nV0.7_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
