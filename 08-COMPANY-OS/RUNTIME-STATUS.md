@@ -1,91 +1,39 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-06 UTC  
-**Current engineering branch:** `feature/company-kernel-distributed-safety-v0.7`
+**Updated:** 2026-09-06 16:59 UTC  
+**Current engineering branch:** `feature/company-kernel-distributed-safety-v0.7`  
+**Draft PR:** #3 — `Company Kernel Distributed / Production Safety v0.7 — exact authority + distributed execution`
 
 ## Canonical project identity
 
 **Project:** Company Operating System  
-**Recommended GitHub slug:** `Company-Operating-System`  
-**Historical repository slug:** `NCF-v1` — administrative rename still pending because the connected GitHub tool does not expose repository-name mutation.
+**Historical repository slug:** `blakailabs/NCF-v1`  
+**Intended repository slug:** `blakailabs/Company-Operating-System`
 
-NCF remains the constitutional governance layer inside the broader Company Operating System project.
+NCF remains the constitutional governance layer inside the broader Company Operating System.
 
-## Architecture implemented
-
-```text
-NCF constitutional governance
-→ CDM company discovery contract
-→ CFHS filesystem hierarchy
-→ deterministic CFHS materializer
-→ Company Kernel API
-→ Company Kernel runtime v0.1
-→ Kernel Hardening v0.2
-→ Kernel Trust Layer v0.3
-→ Kernel Trust Hardening v0.4
-→ Kernel Action Safety v0.5
-→ Kernel Live-Adapter Safety v0.6
-→ Kernel Distributed / Production Safety v0.7 (active)
-```
-
-## Completed milestones
-
-### v0.1–v0.4
-
-Runnable kernel, authenticated hardening, trust provenance and trust hardening established deterministic identity/authority, policy, audit, secret, session, delegation and recovery foundations.
-
-### v0.5 — Action Safety
-
-Implemented semantic action intents, replay protection, kernel-derived resource reservations, approval floors, explicit approvers, compensation requirements, fail-closed audit PREPARE, crash recovery, conservative unknown-side-effect handling and simulated consequential execution.
-
-### v0.6 — Live-Adapter Safety
-
-Canonical runtime:
-
-```text
-kernel.server_v06_hardened
-→ TrustKernelV06ReleaseGate
-```
-
-Implemented exact economic accounting, persistent provider idempotency/lookup, provider reconciliation, approval-session provenance, anchored release/provider evidence, semantic replay recovery and separately governed S3 compensation.
-
-Certified:
-
-```text
-102 / 102 targeted tests PASS
-```
-
-PR #2 was merged into the validated Company OS lineage at:
-
-```text
-14c07be1aca2dc93e531f955a5bdf537f46bd0fc
-```
-
-## v0.7 — Distributed / Production Safety
-
-Active branch:
-
-```text
-feature/company-kernel-distributed-safety-v0.7
-```
-
-Draft PR:
-
-```text
-#3 — Company Kernel Distributed / Production Safety v0.7
-```
-
-### Canonical runtime
+## Canonical runtime
 
 ```text
 kernel.server_v07
+→ TrustKernelV07ExactAuthorityFinalGate
+→ TrustKernelV07ControlPlaneFinalGate
 → TrustKernelV07DistributedCompensationFinalGate
+→ TrustKernelV07TransactionalProviderGate
 → RecoverableSQLiteFencedStateCoordinator
 ```
 
-### Business-object identity
+Canonical server promotion commit:
 
-Consequential operations explicitly identify the real-world target independently of replay nonce.
+```text
+f8765efefc8f76621be3cd3f849754436a55ea74
+```
+
+## v0.7 implemented safety layers
+
+### Business-object identity + semantic replay
+
+Consequential actions bind a versioned real-world business identity independently of caller replay nonce.
 
 ```text
 same business identity + same semantic intent → idempotent
@@ -93,130 +41,91 @@ same business identity + different semantic intent → conflict
 same semantic intent + different business identity → conflict
 ```
 
-Raw business identity values are not persisted by the distributed identity ledgers.
+### Monotonic distributed fencing
 
-### Monotonic ownership fencing
+Execution, reconciliation and compensation ownership phases use increasing fencing epochs. Stale kernels are rejected both at kernel state transitions and at the provider/gateway guard.
 
-Each business resource uses an increasing ownership epoch:
+### Transaction-coordinated PREPARE
 
-```text
-kernel A / token 1
-→ lease expiry / takeover
-kernel B / token 2
-→ stale kernel A rejected
-```
-
-The provider/gateway also rejects stale lower fencing epochs.
-
-### Atomic transaction-coordinated PREPARE
-
-Canonical ordering:
+After approval provenance and anchored authorization evidence, the reference coordinator atomically binds:
 
 ```text
-approval provenance
-→ authorization decision
-→ authorization evidence anchor
-→ distributed transaction PREPARE
-    ├── verify business identity
-    ├── verify semantic replay
-    ├── reserve exact capacity
-    ├── acquire ownership fence
-    └── journal transaction version
-→ provider PREPARE using the same exact reservation
+business identity
++ semantic replay
++ exact resource capacity
++ ownership fence
++ transaction/version journal
 ```
 
-The reference SQLite coordinator acquires exact capacity and the ownership epoch atomically.
+The provider PREPARE path must consume the same exact reservation ID.
 
-Safe PREPARE aborts are retryable under a higher fencing epoch. A dead PREPARED owner can be replaced after lease expiry without double-reserving capacity.
+### Forward reconciliation
 
-### Fenced provider execution and reconciliation
-
-Provider invocation requires the current transaction/fence and provider-side stale-token acceptance.
-
-Unknown outcomes remain on the same transaction ID and reconcile under a newer ownership epoch.
+Unknown provider outcomes remain on the same transaction ID and reconcile under a newer fencing epoch. Provider execution is not blindly retried while outcome is unknown.
 
 ### Distributed compensation
 
-Compensation is now implemented on the same distributed transaction rather than being blocked.
-
-It requires:
+Compensation is a separately governed reversal phase of the original distributed transaction with:
 
 ```text
-committed original transaction
-→ separate compensation intent
-→ base reversal authority
-→ independent multi-party approvals + session provenance
-→ anchored compensation authorization evidence
-→ immutable compensation identity
-→ new compensation ownership epoch
-→ provider/gateway fence acceptance
-→ provider-idempotent reversal
+separate compensation intent
++ reversal authority
++ independent approvals/session provenance
++ anchored compensation authorization
++ compensation identity
++ new fencing epoch
++ provider idempotency
++ unknown-outcome reconciliation
 ```
 
-Compensation identity binds the original business identity, provider, original provider action and compensation operation.
+Successful reversal converges exact accounting, provider state, replay state, business identity and distributed transaction to `COMPENSATED`.
 
-Definite provider rejection returns the original transaction safely to `COMMITTED`, releases the compensation fence and preserves committed exact usage for retry.
+### Shared/fenced persistence contract
 
-Successful reversal converges:
+`kernel/shared_state_backend.py` defines the cross-host persistence guarantees required for production correctness:
 
 ```text
-exact resource state → COMPENSATED
-provider state → COMPENSATED
-semantic replay → COMPENSATED
-business identity → COMPENSATED
-distributed transaction → COMPENSATED
+serializable transactions
+compare-and-swap
+monotonic fencing
+durable ordered journal
+multi-connection visibility
+synchronous durability
+authoritative shared time
+distributed quorum
 ```
 
-### Compensation unknown-outcome reconciliation
+The SQLite reference passes semantic conformance tests but explicitly remains **not production-ready** because it lacks authoritative distributed time and distributed quorum.
 
-If provider reversal may have committed but the response is lost:
+### Fenced approval control plane
+
+Approval mutation is now versioned and fenced. Approval row, authenticated session provenance, approval-request status and mutation journal commit atomically under one monotonic control-plane epoch.
+
+The canonical v0.7 gate rejects plain unproven approval mutation.
+
+### Exact financial authority
+
+Financial authority now uses the same exact integer units as accounting.
+
+Reference standing refund authority:
 
 ```text
-COMPENSATING
-→ COMPENSATION_RECONCILIATION_REQUIRED
-→ release compensation epoch
-→ exact usage remains committed locally
+USD $250.00
+= 25,000 minor units
 ```
 
-A new higher reconciliation epoch performs provider compensation lookup.
-
-Provider proves reversal:
+Rules:
 
 ```text
-→ finalize COMPENSATED everywhere
+$250.00 → ALLOW under standing authority
+$250.01 → ELEVATION_REQUIRED
+sub-minor precision → REJECT
+NaN / infinite amount → REJECT
+legacy float-only elevation → cannot bypass exact authority
+matching exact-unit elevation → may authorize within elevated unit ceiling
 ```
 
-Provider proves no reversal:
-
-```text
-→ transaction returns COMMITTED
-→ exact usage remains committed
-→ same approved compensation can retry safely
-```
-
-Reconciliation-attempt history is retained across retries.
-
-### Runnable v0.7 server
-
-```bash
-python -m kernel.server_v07 \
-  --state-dir <state> \
-  --config examples/kernel.config.json \
-  --policy-dir examples/policies \
-  --kernel-instance-id kernel-a
-```
-
-Default port: `8048`.
-
-The server now exposes governed compensation request/execute plus:
-
-```text
-POST /v7/provider/compensation/reconcile
-```
-
-Production credentials/providers remain disabled.
-
-### v0.7 certification
+## v0.7 certification
 
 Canonical validator:
 
@@ -225,64 +134,101 @@ cd 08-COMPANY-OS/11-KERNEL-RUNTIME
 PYTHONPATH=. python scripts/validate_v07.py
 ```
 
-Exact-count certified surface:
+Current exact-count surface:
 
 ```text
-102  v0.5/v0.6 regressions
- 28  distributed primitives
- 17  fenced provider integration
- 17  transaction coordinator
-  6  transaction recovery hardening
- 11  transactional provider integration
- 11  distributed compensation
+102  v0.5/v0.6 regression tests
+ 28  distributed primitive tests
+ 17  fenced provider integration tests
+ 17  distributed transaction coordinator tests
+  6  transaction recovery-hardening tests
+ 11  transactional provider-gate tests
+ 11  distributed compensation tests
+ 13  shared-backend contract tests
+  9  fenced approval-control tests
+  8  exact financial-authority tests
 ---
-192 / 192 PASS
+222 targeted tests
 ```
 
-Canonical compensation-capable server certification:
+Corrected exact-authority candidate:
 
 ```text
-Run ID: 34044287513
-Commit: 8c2d5fb1b901ce86b809ead454edae7e48a393e3
-Ran 192 tests in 6.165s
-192 PASS
+Run ID: 34045382906
+Commit: 2f8ef6e3dd769b7203fc4a8fa5ca738166414b56
+222 / 222 PASS
 0 failures
 0 errors
 0 skipped
 exact_test_count = true
 ```
 
+Canonical server certification:
+
+```text
+Run ID: 34045682513
+Commit: f8765efefc8f76621be3cd3f849754436a55ea74
+Ran 222 tests in 5.736s
+222 / 222 PASS
+0 failures
+0 errors
+0 skipped
+exact_test_count = true
+```
+
+## Current production posture
+
+```text
+Business-object identity................ IMPLEMENTED
+Semantic replay safety.................. IMPLEMENTED
+Monotonic distributed fencing........... IMPLEMENTED
+Transactional PREPARE................... IMPLEMENTED
+Forward outcome reconciliation.......... IMPLEMENTED
+Distributed compensation................ IMPLEMENTED
+Compensation reconciliation............. IMPLEMENTED
+Shared persistence contract............. IMPLEMENTED / REFERENCE ONLY
+Fenced approval control plane........... IMPLEMENTED
+Exact financial authority............... IMPLEMENTED
+Canonical v0.7 certification............ 222 / 222 PASS
+Production HA persistence backend....... PENDING
+Production IdP / MFA policy............. PENDING
+Production remote anchor hardening...... PENDING
+Production provider event reconciliation PENDING
+Production credentials.................. DENIED
+Production write providers.............. DISABLED
+Real provider test mode................. NOT YET ENABLED
+```
+
 ## Remaining v0.7 work
 
-1. production shared/fenced persistence backend contract and implementation preserving current semantics across hosts;
-2. ownership/fencing for approval mutation and other shared kernel control-plane state;
-3. exact-unit financial authority thresholds;
-4. production external IdP/MFA authentication-class policy;
-5. hardened remote audit-anchor authentication/availability;
-6. provider webhook/event reconciliation;
-7. one real provider's identity/fencing/idempotency semantics in test mode only;
-8. migration, network-partition, failover and incident drills.
+1. implement and certify a real shared/HA persistence backend preserving the tested fencing/CAS/journal semantics across hosts;
+2. extend shared control-plane ownership/versioning beyond approval mutation where needed;
+3. production external IdP/MFA authentication-class requirements for S3 actions, approvals, elevations and compensation;
+4. hardened remote audit-anchor authentication, availability and reconciliation;
+5. provider webhook/event reconciliation;
+6. validate one real provider's business identity/fencing/idempotency semantics in test mode only;
+7. migration, network-partition, failover and incident drills.
 
 ## Global production release gate
 
-No production write-capable provider is enabled until:
+No production write-capable provider is enabled until the applicable path has:
 
 ```text
-identity verified
-+ recursive authority provenance verified
-+ policy authenticity verified
-+ business target identity bound
-+ semantic replay bound
-+ transaction-coordinated exact capacity acquired
-+ current distributed fence held
-+ provider stale-fence rejection available
-+ provider idempotency supported
-+ approval provenance satisfied
-+ release authority anchored
-+ provider PREPARE anchored
-+ forward reconciliation available
-+ compensation independently governed/fenced/reconcilable
-+ production shared ownership/fencing backend validated
+verified identity / authentication class
++ recursive authority provenance
++ authentic policy
++ exact financial authority where applicable
++ business-object identity binding
++ semantic replay binding
++ transaction-coordinated exact capacity
++ current distributed fence
++ provider stale-fence protection
++ provider idempotency
++ session-proven approvals
++ anchored release/provider evidence
++ forward reconciliation
++ governed/fenced/reconcilable compensation where required
++ production shared/HA backend certification
 ```
 
 ## Administrative repository rename
@@ -296,6 +242,6 @@ blakailabs/NCF-v1
 
 See `/ADMIN-RENAME.md`.
 
-## Next v0.7 increment
+## Next logical v0.7 increment
 
-Define and certify the **production shared/fenced persistence contract** so multiple hosts preserve the current transaction, replay, exact-resource, fencing and compensation invariants without relying on a single SQLite database.
+Implement **production identity / MFA authentication-class policy** while preserving the existing 222-test regression surface. Production credentials remain disabled throughout that work.
