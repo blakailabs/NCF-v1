@@ -17,11 +17,11 @@ from .hardening import HardeningError
 
 
 class DurableActionIntentIndex:
-    """Maps ephemeral action attempts to stable semantic intent digests for recovery."""
+    """Maps ephemeral attempts to stable semantic intent digests for crash recovery."""
 
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
-        self.conn.execute(
+        self.conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS action_intent_index(
                 intent_id TEXT PRIMARY KEY,
@@ -32,7 +32,11 @@ class DurableActionIntentIndex:
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
-            )
+            );
+            CREATE TABLE IF NOT EXISTS action_execution_markers(
+                intent_id TEXT PRIMARY KEY,
+                started_at TEXT NOT NULL
+            );
             """
         )
         self.conn.commit()
@@ -56,6 +60,19 @@ class DurableActionIntentIndex:
         )
         self.conn.commit()
 
+    def mark_execution_started(self, intent_id: str, started_at: str) -> None:
+        self.conn.execute(
+            "INSERT OR IGNORE INTO action_execution_markers(intent_id,started_at) VALUES(?,?)",
+            (intent_id, started_at),
+        )
+        self.conn.commit()
+
+    def execution_started(self, intent_id: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM action_execution_markers WHERE intent_id=?",
+            (intent_id,),
+        ).fetchone() is not None
+
     def set_status(self, intent_id: str, status: str, updated_at: str) -> None:
         self.conn.execute(
             "UPDATE action_intent_index SET status=?,updated_at=? WHERE intent_id=?",
@@ -73,10 +90,10 @@ class DurableActionIntentIndex:
 class ActionRecoveryManager:
     """Reconciles incomplete consequential actions after process/runtime failure.
 
-    Recovery is intentionally conservative. If a durable audit PREPARE exists but
-    no terminal audit result exists, the external side effect may have happened.
-    The resource reservation is committed and replay state becomes
-    UNKNOWN_SIDE_EFFECT so humans/agents must reconcile before retrying.
+    The execution-started marker separates a safe pre-device crash from a crash
+    after the provider call began. Once execution began, recovery is deliberately
+    conservative: resources are accounted and replay is blocked until the outcome
+    is reconciled.
     """
 
     def __init__(
@@ -111,6 +128,24 @@ class ActionRecoveryManager:
             (intent_id,),
         ).fetchone()
 
+    def _safe_preexecution_failure(self, intent, reservations: list[str], audit, now: str) -> dict[str, Any]:
+        if reservations:
+            self.resources.release_many(reservations)
+        replay = self.replay.get(intent["replay_nonce"])
+        if replay and replay["status"] == "RESERVED":
+            self.replay.fail(intent["replay_nonce"], "CFHS_PREEXECUTION_CRASH", unknown_side_effect=False)
+        if audit and audit["status"] == "PREPARED":
+            try:
+                self.audit.fail(
+                    audit["audit_id"],
+                    "CFHS_PREEXECUTION_CRASH",
+                    {"recovered": True, "execution_started": False},
+                )
+            except Exception:
+                pass
+        self.intents.set_status(intent["intent_id"], "FAILED_PREEXECUTION", now)
+        return {"intent_id": intent["intent_id"], "recovery": "RELEASED_PREEXECUTION"}
+
     def reconcile_intent(self, intent_id: str) -> dict[str, Any]:
         intent = self.conn.execute("SELECT * FROM action_intent_index WHERE intent_id=?", (intent_id,)).fetchone()
         if not intent:
@@ -118,6 +153,7 @@ class ActionRecoveryManager:
         replay = self.replay.get(intent["replay_nonce"])
         reservations = self._reservation_ids(intent_id)
         audit = self._latest_audit(intent_id)
+        execution_started = self.intents.execution_started(intent_id)
         now = self._now(self.conn)
 
         if replay and replay["status"] == "COMMITTED":
@@ -134,15 +170,10 @@ class ActionRecoveryManager:
             self.intents.set_status(intent_id, "COMMITTED_RECOVERED", now)
             return {"intent_id": intent_id, "recovery": "COMMITTED_FROM_AUDIT"}
 
-        if not audit:
-            if reservations:
-                self.resources.release_many(reservations)
-            if replay and replay["status"] == "RESERVED":
-                self.replay.fail(intent["replay_nonce"], "CFHS_PREEXECUTION_CRASH", unknown_side_effect=False)
-            self.intents.set_status(intent_id, "FAILED_PREEXECUTION", now)
-            return {"intent_id": intent_id, "recovery": "RELEASED_PREEXECUTION"}
+        if not execution_started:
+            return self._safe_preexecution_failure(intent, reservations, audit, now)
 
-        if audit["status"] == "FAILED":
+        if audit and audit["status"] == "FAILED":
             details = json.loads(audit["details_json"] or "{}")
             compensated = bool(details.get("compensated"))
             if compensated:
@@ -153,8 +184,7 @@ class ActionRecoveryManager:
                 self.intents.set_status(intent_id, "FAILED_COMPENSATED", now)
                 return {"intent_id": intent_id, "recovery": "FAILED_COMPENSATED"}
 
-        # PREPARED, unresolved FAILED, or an unknown audit status: the external
-        # effect cannot be disproven. Account conservatively and block replay.
+        # Execution began and no trustworthy terminal result exists.
         if reservations:
             self.resources.commit_many(reservations)
         if replay and replay["status"] == "RESERVED":
@@ -164,7 +194,7 @@ class ActionRecoveryManager:
                 self.audit.fail(
                     audit["audit_id"],
                     "CFHS_CRASH_RECOVERY_UNKNOWN",
-                    {"recovered": True, "reason": "audit_prepared_without_terminal_commit"},
+                    {"recovered": True, "execution_started": True},
                 )
             except Exception:
                 pass
@@ -172,14 +202,12 @@ class ActionRecoveryManager:
         return {"intent_id": intent_id, "recovery": "UNKNOWN_SIDE_EFFECT"}
 
     def reconcile_all(self) -> dict[str, Any]:
-        results = []
-        for row in self.intents.active():
-            results.append(self.reconcile_intent(row["intent_id"]))
+        results = [self.reconcile_intent(row["intent_id"]) for row in self.intents.active()]
         return {"count": len(results), "results": results}
 
 
 class CrashSafeConsequentialActionCoordinator(ConsequentialActionCoordinator):
-    """Adds durable intent indexing and catch-all pre-execution recovery."""
+    """Adds durable intent indexing, execution markers, and catch-all recovery."""
 
     def __init__(
         self,
@@ -204,14 +232,17 @@ class CrashSafeConsequentialActionCoordinator(ConsequentialActionCoordinator):
         compensate: Callable[[dict[str, Any], Exception | None], Any] | None = None,
     ) -> dict[str, Any]:
         self.intents.register(intent)
+
+        def marked_invoke(args: dict[str, Any]):
+            self.intents.mark_execution_started(intent.intent_id, self.recovery._now(self.conn))
+            return invoke(args)
+
         try:
-            result = super().execute(intent, arguments, authorize, invoke, compensate)
+            result = super().execute(intent, arguments, authorize, marked_invoke, compensate)
             status = "REPLAYED" if result.get("status") == "REPLAYED" else "COMMITTED"
             self.intents.set_status(intent.intent_id, status, self.recovery._now(self.conn))
             return result
         except HardeningError:
-            # The base coordinator already reconciles its explicit safety errors.
-            # Persist a terminal intent status when replay state proves one.
             replay = self.replay.get(intent.replay_nonce)
             if replay and replay["status"] in {"FAILED", "UNKNOWN_SIDE_EFFECT"}:
                 self.intents.set_status(intent.intent_id, replay["status"], self.recovery._now(self.conn))
@@ -219,4 +250,8 @@ class CrashSafeConsequentialActionCoordinator(ConsequentialActionCoordinator):
         except Exception as exc:
             recovery = self.recovery.reconcile_intent(intent.intent_id)
             code = "CFHS_UNKNOWN_SIDE_EFFECT" if recovery["recovery"] == "UNKNOWN_SIDE_EFFECT" else "CFHS_PREEXECUTION_FAILED"
-            raise HardeningError(code, "Unexpected action coordinator failure was crash-reconciled", {"error": str(exc), **recovery}) from exc
+            raise HardeningError(
+                code,
+                "Unexpected action coordinator failure was crash-reconciled",
+                {"error": str(exc), **recovery},
+            ) from exc
