@@ -13,6 +13,22 @@
       ]
     },
     {
+      "id": "human:risk",
+      "type": "human",
+      "active": true,
+      "capabilities": [
+        {"id":"cap-action-approve-risk","action":"kernel.action.approval.approve","resource":"/run/actions/approvals/*"}
+      ]
+    },
+    {
+      "id": "human:finance",
+      "type": "human",
+      "active": true,
+      "capabilities": [
+        {"id":"cap-action-approve-finance","action":"kernel.action.approval.approve","resource":"/run/actions/approvals/*"}
+      ]
+    },
+    {
       "id": "agent:ops",
       "type": "agent",
       "active": true,
@@ -22,7 +38,10 @@
         {"id":"cap-http-readonly","action":"http.get","resource":"/dev/http/readonly"},
         {"id":"cap-github-readonly","action":"github.repo.read","resource":"/dev/github/readonly"},
         {"id":"cap-event-publish","action":"event.publish","resource":"/run/ipc/company.*"},
-        {"id":"cap-event-consume","action":"event.consume","resource":"/run/ipc/company.*"}
+        {"id":"cap-event-consume","action":"event.consume","resource":"/run/ipc/company.*"},
+        {"id":"cap-action-intent-create","action":"kernel.action.intent.create","resource":"/run/actions/intents"},
+        {"id":"cap-action-approval-request","action":"kernel.action.approval.request","resource":"/run/actions/*"},
+        {"id":"cap-action-compensation-declare","action":"kernel.action.compensation.declare","resource":"/run/actions/*"}
       ]
     }
   ],
