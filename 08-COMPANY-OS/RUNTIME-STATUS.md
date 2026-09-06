@@ -1,13 +1,13 @@
 # Company Operating System Runtime Status
 
 **Updated:** 2026-09-06 UTC  
-**Current branch:** `feature/company-kernel-live-adapter-safety-v0.6`
+**Current engineering branch:** `feature/company-kernel-distributed-safety-v0.7`
 
 ## Canonical project identity
 
 **Project:** Company Operating System  
 **Recommended GitHub slug:** `Company-Operating-System`  
-**Historical repository slug:** `NCF-v1` — administrative rename pending
+**Historical repository slug:** `NCF-v1` — administrative rename still pending because the connected GitHub tool does not expose repository-name mutation.
 
 NCF remains the constitutional governance layer inside the broader Company Operating System project.
 
@@ -25,6 +25,7 @@ NCF constitutional governance
 → Kernel Trust Hardening v0.4
 → Kernel Action Safety v0.5
 → Kernel Live-Adapter Safety v0.6
+→ Kernel Distributed / Production Safety v0.7 (active)
 ```
 
 ## Completed milestones
@@ -37,15 +38,6 @@ Durable principal/process/checkpoint/audit state, default-deny capabilities, con
 
 Opaque hashed sessions, expiration/revocation, process ownership/supervision, restrictive policy overlay, tamper-evident audit chain, secret leases and sandboxed read-only HTTP.
 
-Last clean v0.2 workflow:
-
-```text
-Run 33998002023
-Compile................ PASS
-Combined tests......... PASS (16)
-Secret scan............ PASS
-```
-
 ### v0.3 — Trust provenance
 
 Signed restrictive policy packages, atomic activation, session rotation, capability bounds, durable delegation proofs, vault abstraction, event/queue ownership, audit anchors, GitHub read-only provider, one-time bootstrap and adversarial trust catalog.
@@ -56,12 +48,6 @@ Restart-safe bootstrap, policy rollback protection, recursive delegation verific
 
 ### v0.5 — Action Safety
 
-Frozen branch:
-
-```text
-feature/company-kernel-action-safety-v0.5
-```
-
 Implemented semantic action intents, replay protection, kernel-derived resource reservations, approval floors, explicit eligible approvers, compensation requirements, fail-closed audit PREPARE, execution-start markers, crash recovery, conservative `UNKNOWN_SIDE_EFFECT`, device/provider binding and simulation-only consequential execution.
 
 Validation surface:
@@ -71,12 +57,6 @@ Validation surface:
 ```
 
 ### v0.6 — Live-Adapter Safety
-
-Current branch:
-
-```text
-feature/company-kernel-live-adapter-safety-v0.6
-```
 
 Canonical hardened runtime:
 
@@ -100,23 +80,105 @@ Implemented:
 - replay nonce pre-reservation before provider-intent persistence;
 - restart repair for replay/intents;
 - sandbox-only provider registry;
-- separately governed S3 compensation with its own intent, approvals, provenance and anchored authority.
+- separately governed S3 compensation.
 
-Current provider registry:
+Certified validation:
 
 ```text
-sandbox-payments
+102 / 102 targeted safety tests PASS
+11 test modules
+exact test-count enforcement
+GitHub Actions PASS
 ```
 
-Production provider credentials are not accepted.
+PR #2 (`Company Kernel Live-Adapter Safety v0.6`) was merged successfully into the frozen v0.5 lineage at merge commit:
 
-## v0.6 CI certification
+```text
+14c07be1aca2dc93e531f955a5bdf537f46bd0fc
+```
+
+Production provider release and production credentials remain denied.
+
+## v0.7 — Distributed / Production Safety
+
+Active branch:
+
+```text
+feature/company-kernel-distributed-safety-v0.7
+```
+
+v0.7 begins moving from single-kernel correctness to distributed ownership correctness.
+
+### First implemented primitive: business-object identity
+
+Each consequential operation can declare a versioned business identity contract defining the fields that identify the real-world object/action.
+
+Example:
+
+```text
+payments.refund.target/v1
+→ provider_account_id
+→ charge_id
+→ refund_reference
+```
+
+The kernel stores only identity digests/contract metadata, not raw business identity values.
+
+Current invariants:
+
+```text
+same business identity + same semantic intent
+→ idempotent
+
+same business identity + different semantic intent
+→ CFHS_BUSINESS_IDENTITY_CONFLICT
+
+same semantic intent + different business identity
+→ CFHS_BUSINESS_IDENTITY_CONFLICT
+```
+
+This closes the gap where a caller could attempt the same real-world action under a different replay nonce.
+
+### Second implemented primitive: monotonic fencing
+
+The reference fence store issues a monotonically increasing fencing token for each distributed business resource.
+
+```text
+epoch 1 → token 1
+takeover → token 2
+next takeover → token 3
+```
+
+An expired/stale owner cannot renew, release another owner's lease, or advance distributed business state after takeover.
+
+A provider-side reference fence guard rejects tokens below the highest observed epoch, demonstrating the required external stale-owner rejection contract.
+
+### Distributed action permit
+
+The initial permit binds:
+
+```text
+business identity digest
+identity contract/version
+operation
+semantic intent digest
+provider id
+fence resource
+owner
+lease id
+monotonic fence token
+lease expiration
+```
+
+State advancement requires the permit's fence to remain current and the business identity to remain bound to the same semantic intent/provider.
+
+### v0.7 certification
 
 Canonical validator:
 
 ```bash
 cd 08-COMPANY-OS/11-KERNEL-RUNTIME
-PYTHONPATH=. python scripts/validate_v06.py
+PYTHONPATH=. python scripts/validate_v07.py
 ```
 
 Validator success requires:
@@ -124,63 +186,38 @@ Validator success requires:
 ```text
 compile_ok == true
 result.wasSuccessful() == true
-tests_run == 102
+tests_run == 130
 ```
 
-Certified GitHub Actions run:
+Current certified surface:
 
 ```text
-Run ID: 34006498158
-Commit: 3b8cc7a4d7fc3bb62beccd875ef0fbeffbd87fcd
+102 v0.5/v0.6 regression tests
++ 28 distributed-safety tests
+= 130 / 130 PASS
+```
+
+Latest successful branch run:
+
+```text
+Run ID: 34007141355
 Workflow: Company OS Kernel CI
-Job: test
-Step: Validate Live-Adapter Safety v0.6
 Conclusion: SUCCESS
 ```
 
-The current documentation-only v0.6 head also passed the same exact-count validator.
+## Remaining v0.7 work
 
-Current validation state:
-
-```text
-Compilation........................ PASS
-Targeted safety tests.............. 102 / 102 PASS
-Test modules....................... 11
-v0.5 regression suites included.... YES
-CI execution blocker............... RESOLVED
-```
-
-Issue #1 tracked the former GitHub Actions startup failure and is closed as completed.
-
-Draft PR #2 (`Company Kernel Live-Adapter Safety v0.6`) is open against the frozen v0.5 branch.
-
-## v0.6 acceptance
-
-```text
-Sandbox implementation................ ACCEPTED
-Adversarial test coverage.............. 102 / 102 CI-CERTIFIED
-Source-level pre-freeze review......... COMPLETED
-Clean execution certification.......... PASS
-Production provider release............ DENIED
-Production credentials................. DENIED
-```
-
-Passing v0.6 CI certifies the sandbox architecture milestone; it does not authorize a production provider.
-
-## Remaining production blockers
-
-- operation-specific business identity/deduplication beyond caller replay nonce;
-- one real provider's test-mode idempotency/lookup semantics;
-- compensation unknown-outcome reconciliation;
-- production cryptographic OIDC/MFA enforcement for sensitive approval classes;
-- asymmetric/HSM-backed policy trust root;
-- highly available independent immutable audit anchoring;
-- distributed/fenced replay, resource, approval, provider-state and reconciliation ownership;
-- exact-unit authority limits for financial policy thresholds;
-- workload-identity/mTLS/HSM-backed secret delivery;
+- shared/fenced persistence interface and production backend contract;
+- atomic coordination among business identity, replay, exact resource reservation and fence ownership;
+- fencing of approval ownership, provider execution ownership and reconciliation ownership;
+- integrate `DistributedActionPermit` into the v0.6 provider execution gate before provider invocation;
+- symmetric compensation unknown-outcome reconciliation;
+- exact-unit financial authority thresholds;
+- production external IdP/MFA authentication-class policy;
+- hardened remote audit-anchor authentication/availability;
 - provider webhook/event reconciliation;
-- provider-side canary limits and external hard ceilings;
-- migration/failover/incident runbooks.
+- one real provider's business identity/fencing/idempotency semantics in test mode only;
+- migration, partition, failover and incident drills.
 
 ## Global production release gate
 
@@ -192,6 +229,8 @@ identity verified
 + policy authenticity verified
 + business target identity bound
 + semantic replay reserved
++ current distributed fence held
++ provider stale-fence rejection available
 + provider idempotency supported
 + approval provenance satisfied
 + exact resource reservation acquired
@@ -202,17 +241,28 @@ identity verified
 + distributed ownership/fencing available for HA
 ```
 
-## Next engineering milestone
+## Administrative repository rename
 
-Build **Company Kernel Distributed / Production Safety v0.7**.
+The repository should still be renamed:
 
-Priority order:
+```text
+blakailabs/NCF-v1
+→ blakailabs/Company-Operating-System
+```
 
-1. shared/fenced persistence interfaces for replay, exact resources, approvals, provider state and reconciliation;
-2. operation-specific business-object identity/idempotency contracts;
-3. symmetrical compensation outcome reconciliation;
-4. production-grade external identity/MFA classes for selected S3 actions;
-5. hardened remote audit-anchor authentication/availability;
-6. exact-unit financial authority limits;
-7. one real provider adapter in test/sandbox mode only with provider-side hard limits;
-8. distributed recovery, failover and incident drills before any production credential is accepted.
+The current connected GitHub API surface cannot perform that admin mutation. See `/ADMIN-RENAME.md` for the exact GitHub Settings action and post-rename verification steps.
+
+## Next v0.7 increment
+
+Make fencing a required input to the existing provider-action/reconciliation lifecycle:
+
+```text
+BusinessObjectIdentity
+→ DistributedActionPermit
+→ provider-action PREPARE
+→ provider invocation with fence token
+→ provider stale-token enforcement
+→ fenced reconciliation ownership
+```
+
+Only after that integration is certified should the project move to a real provider in test/sandbox mode.
