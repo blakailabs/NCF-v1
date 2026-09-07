@@ -2,72 +2,27 @@
 
 **Base:** merged v0.8 commit `eb47c7cfa9ab223f8e60847e651f2387edff0b08`  
 **Branch:** `feature/company-kernel-production-infrastructure-v0.9`  
-**Status:** provider-neutral contract certified; concrete provider integration pending target selection
+**Active PR:** #5  
+**Provider sequence:** Spanner first → YugabyteDB second → production identity/authorities/HSM → deployment automation
 
 ## Goal
 
 Connect real infrastructure to the Company Kernel without weakening the certified v0.8 safety contracts.
 
-The kernel remains provider-neutral. A provider integration is an adapter beneath the contract, not a source of truth for the contract itself.
+The kernel remains provider-neutral. Provider-specific adapters live beneath the contract and must satisfy it rather than redefine it.
 
 ## Frozen v0.8 baseline
 
-The v0.8 synchronized head `ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e` passed exact-count CI run `34083972113` at **415/415** with zero failures, errors or skips.
-
-That entire surface remains a required regression baseline for v0.9.
-
-## First certified v0.9 checkpoint
-
 ```text
-CI run: 34084379611
-Validator/head: b8683d5a8c4a407cd7437d7736db50771dc9bf1c
-427 / 427 PASS
-0 failures
-0 errors
-0 skipped
-compile_ok = true
-exact_test_count = true
-successful = true
+v0.8 synchronized CI: 34083972113
+415 / 415 PASS
 ```
 
-Exact incremental surface:
+## Neutral v0.9 contract
 
-```text
-415 frozen v0.8 tests
- 12 provider-neutral production-infrastructure tests
----
-427 targeted tests
-```
+`kernel/production_infrastructure_v09.py` defines the machine-verifiable evidence boundary for any real provider.
 
-## Implemented contract
-
-`kernel/production_infrastructure_v09.py` defines a provider-neutral machine-verifiable production evidence bundle plus external-verifier certification gate.
-
-A concrete adapter candidate must bind:
-
-```text
-deployment_id
-provider_id
-adapter_name
-adapter_version
-adapter_implementation_digest
-backend_id
-cluster_id
-capability_digest
-topology_evidence_digest
-probe_evidence_digest
-release_attestation_digest
-trust_store_id
-authority_id + authority_class + authority_generation
-credential_source_class
-observed_at
-valid_until
-evidence_nonce
-required capability claims
-required evidence phases
-```
-
-## Required HA capability surface
+Required HA capability surface:
 
 ```text
 serializable_transactions
@@ -80,7 +35,7 @@ distributed_quorum
 split_brain_protection
 ```
 
-## Required certification evidence phases
+Required certification evidence phases:
 
 ```text
 static_deployment_identity
@@ -94,71 +49,112 @@ runtime_enrollment_activation
 restart_cross_process_recovery
 ```
 
-## Certified fail-closed rules
+No caller/provider assertion such as `production_ready=true` is accepted as evidence.
+
+## Spanner v0.9.1 — first concrete provider contract
+
+Implemented in `kernel/spanner_backend_v091.py` and documented in `SPANNER-v0.9.1.md`.
+
+The adapter binds:
 
 ```text
-missing external verifier → deny
-provider self-certification → deny
-non-independent verifier → deny
-verifier digest mismatch → deny
-missing HA capability → deny
-missing required evidence phase → deny
-stale/expired evidence → deny
-invalid credential source class → deny
-secret-like material in evidence metadata → deny
-invalid authority generation → deny
+provider = google-cloud-spanner
+project / instance / database
+instance configuration
+database dialect
+adapter version
+schema digest
+backend and cluster identity
+external credential-source class
 ```
 
-Positive readiness requires an independent verifier receipt and production trust-store provenance.
-
-## Adapter contract families still to connect to real infrastructure
-
-### 1. Shared-state backend
-Must demonstrate serializable transactions, CAS/version checks, monotonic fencing, ordered journals, synchronous durability, authoritative shared time, distributed quorum/topology evidence, and split-brain protection.
-
-### 2. Topology source
-Must independently report cluster identity, voting members, failure domains, health, quorum/read model, write acknowledgement model, topology epoch and observation timestamps.
-
-### 3. Chaos/fault controller
-Must independently induce quorum loss, node/leader loss, network partitions and recovery. Missing or ineffective fault control is BLOCKED/FAIL, never PASS.
-
-### 4. Bootstrap authority
-Must issue narrow, short-lived, one-purpose permits bound to backend, cluster, topology epoch, evidence, attestation and certification decision.
-
-### 5. Certification-plane deployment
-Must implement the certified shared state machine on real shared persistence while preserving fencing, journal atomicity, rollback protection, replay protection and permanent bootstrap closure.
-
-### 6. Adapter attestation authority
-Must verify exact adapter implementation/release identity and bind capability, topology and probe evidence using trust external to the deployment under certification.
-
-### 7. Enrollment authority
-Must independently authorize enrollment generation and bind readiness, deployment, release attestation and provenance.
-
-### 8. Identity provider
-Must provide production external identity/MFA assurance compatible with the existing production identity policy without persisting raw authentication tokens.
-
-### 9. Anchor trust
-Must replace reference HMAC trust with independently managed asymmetric or HSM/KMS-backed trust appropriate to the deployment threat model.
-
-## Secret-handling rule
-
-No production keys, tokens, credentials or private key material may be committed. Only secret references/identifiers may appear in repository configuration or evidence metadata.
-
-## Provider-neutral implementation rule
-
-A concrete provider must live behind the neutral interface. Provider-specific behavior may strengthen guarantees but must never weaken the minimum contract.
-
-## Current completion boundary
-
-The provider-neutral repository work that can be completed without inventing a deployment target is now implemented and certified.
-
-The next step is inherently deployment-specific: choose the first real shared-state backend target and implement its adapter. Until a target is selected, a concrete adapter cannot be truthfully implemented or production-certified.
-
-## Production posture
+The shared-state schema reserves:
 
 ```text
-production credentials = DENIED
-production write providers = DISABLED
-real production infrastructure = NOT CONNECTED
-reference/test infrastructure = NOT PRODUCTION READY
+cfhs_shared_objects
+cfhs_shared_fences
+cfhs_shared_journal
 ```
+
+GoogleSQL uses commit-timestamp-enabled TIMESTAMP columns. PostgreSQL dialect remains a separate implementation identity.
+
+The operation contract requires strong reads plus read-write transactions for CAS, persistent monotonic fencing, ordered journals, and a **single transaction** for fence assertion + object CAS + journal append.
+
+## Spanner security posture
+
+```text
+embedded credentials........................ DENIED
+secret:// external credential reference...... REQUIRED for live integration
+emulator production certification............ PERMANENTLY DENIED
+live reads.................................... DISABLED BY DEFAULT
+live writes................................... DISABLED BY DEFAULT
+```
+
+The emulator may support development/API testing but cannot produce production durability, IAM/TLS, topology, or fault evidence.
+
+## Current exact certification
+
+```text
+CI run: 34086008840
+Implementation/validator head: e3ee98bca57d2f4c69bbc5c750fecb68e321d55f
+441 / 441 PASS
+0 failures
+0 errors
+0 skipped
+compile_ok = true
+exact_test_count = true
+successful = true
+```
+
+Exact surface:
+
+```text
+415 frozen v0.8 regressions
+ 12 neutral production-infrastructure tests
+ 14 Spanner v0.9.1 contract tests
+---
+441 targeted tests
+```
+
+## Live Spanner certification still required
+
+The 441 checkpoint certifies the **kernel ↔ Spanner contract**, not a real deployment.
+
+A live target must provide observed evidence for:
+
+```text
+S1 exact project/instance/database identity
+S2 installed schema identity
+S3 strong multi-client visibility
+S4 serializability/external consistency
+S5 stale CAS rejection
+S6 monotonic fencing and takeover
+S7 ordered journal
+S8 atomic fenced CAS + journal
+S9 commit-timestamp ordering
+S10 acknowledged-write durability/restart
+S11 topology/instance-configuration evidence
+S12 independent fault/quorum evidence or preserved BLOCKED result
+S13 external release/deployment attestation
+S14 neutral v0.9 production certification
+```
+
+## Portability sequence
+
+Do not move to YugabyteDB merely because the Spanner contract compiles. Move after Spanner live certification succeeds, or after Spanner is explicitly disqualified and its negative evidence is preserved. YugabyteDB must then satisfy the same neutral contract without Spanner-specific exceptions.
+
+## Later stack
+
+After two persistence implementations prove portability:
+
+```text
+production external identity / MFA
+bootstrap + adapter attestation authorities
+runtime enrollment authority
+asymmetric/HSM/KMS anchor trust
+deployment provisioning and evidence automation
+```
+
+## Current external blocker
+
+A real Spanner project/instance/database and approved external credential path are not connected. Production credentials and writes remain disabled. No repository-only change may fabricate the missing live evidence.
