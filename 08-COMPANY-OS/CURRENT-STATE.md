@@ -12,63 +12,23 @@ Draft PR: #4
 Milestone: Company Kernel HA Persistence Safety v0.8
 ```
 
-## Last certified implementation
+## Last certified checkpoint
 
 ```text
-CI run: 34074237722
-Implementation commit: e0a4acca56a954d64a9f1229d4f1173ff34435c8
-340 / 340 PASS
+CI run: 34077423653
+Certified branch-head commit: 79d9bfc9dd61ccb05f98a61a421dc996d6c13ef8
+352 / 352 PASS
 0 failures
 0 errors
 0 skipped
+compile_ok = true
+exact_test_count = true
+successful = true
 ```
 
-A later synchronized 340-test branch head also passed CI run `34074386673`.
+The handoff validator/code checkpoint was `5fe41db3c519aafe583dd3d858c9d0755a9481c7`. Documentation-sync commits may follow; always verify the latest branch-head CI before merge.
 
-## Current candidate — NOT YET CERTIFIED
-
-```text
-Candidate validator commit: 5fe41db3c519aafe583dd3d858c9d0755a9481c7
-Expected exact count: 352
-New test module: test_ha_certification_handoff_v08
-Status: awaiting exact-count CI certification
-```
-
-Candidate implementation adds:
-
-```text
-bootstrap-to-steady-state certification handoff
-digest-bound reserved shared certification-control object
-crash recovery before activation
-crash recovery after activation but before closure
-permanent first-bootstrap closure guard
-closure-aware CertifiedSharedPersistence
-handoff cluster continuity
-topology rollback protection
-concurrent handoff convergence
-activation-expiry recheck before closure
-```
-
-Candidate adversarial tests:
-
-```text
-successful handoff
-idempotent repeated handoff
-crash before shared activation
-crash after shared activation before bootstrap closure
-bootstrap object tampering
-certificate/evidence mismatch
-cluster mismatch
-topology rollback
-second first-bootstrap attempt after closure
-concurrent handoff attempts
-activation expiry during handoff
-steady-state access denied until handoff fully complete
-```
-
-**Do not call the handoff certified until GitHub Actions confirms 352/352 with 0 failures/errors/skips.**
-
-## What is already certified in v0.8
+## What is certified in v0.8
 
 ```text
 HA deployment-readiness contract
@@ -85,6 +45,30 @@ narrow external first-certification bootstrap permit
 one-time permit replay protection
 crash-safe bootstrap retry
 bootstrap target capability revalidation
+bootstrap-to-steady-state certification handoff
+digest-bound shared certification-control object
+crash-safe handoff before/after activation
+permanent first-bootstrap closure guard
+closure-aware CertifiedSharedPersistence
+concurrent handoff convergence
+activation-expiry recheck before closure
+```
+
+## Certified handoff adversarial tests
+
+```text
+successful handoff
+idempotent repeated handoff
+crash before shared activation
+crash after shared activation before bootstrap closure
+bootstrap object tampering
+certificate/evidence mismatch
+cluster mismatch
+topology rollback
+second first-bootstrap attempt after closure
+concurrent handoff attempts
+activation expiry during handoff
+steady-state access denied until handoff fully complete
 ```
 
 ## PR state
@@ -92,7 +76,7 @@ bootstrap target capability revalidation
 ```text
 Only open PR: #4
 PR #4 state: OPEN / DRAFT
-Keep draft until candidate CI and status sync are complete.
+Keep draft while v0.8 production-boundary work continues.
 ```
 
 ## Production posture
@@ -108,15 +92,35 @@ Production one-time permit ledger........ NOT CONNECTED
 Production shared certification plane.... NOT IMPLEMENTED
 ```
 
-## Next exact action
+## Next exact engineering step
+
+Build the **shared certification-plane contract**:
 
 ```text
-1. run/inspect exact-count CI for the 352-test candidate
-2. repair any handoff failures without weakening prior guarantees
-3. once 352/352 is green, sync RUNTIME-STATUS.md
-4. sync this CURRENT-STATE.md to the certified run/commit
-5. sync HA-PERSISTENCE-v0.8.md and PR #4
-6. verify final branch-head CI after documentation sync
+provider-neutral shared certification-plane interface
+→ transactional ACTIVE/SUPERSEDED/INVALIDATED certification records
+→ durable PREPARED/ACTIVATED/CLOSED handoff lineage
+→ atomic CAS/fencing semantics for concurrent certifiers
+→ backend-authoritative expiry
+→ bootstrap closure visible across processes
+→ fail-closed adapter certification before production use
+```
+
+Required next test themes:
+
+```text
+cross-process active-certificate visibility
+concurrent activation conflict
+same-evidence idempotency
+higher-epoch supersession
+lower-epoch rollback rejection
+cluster identity conflict
+invalidation visibility
+certificate expiry visibility
+shared handoff closure visibility
+stale certifier fence rejection
+control-plane restart recovery
+reference/local-only adapter cannot claim production readiness
 ```
 
 ## Standing sync rule
