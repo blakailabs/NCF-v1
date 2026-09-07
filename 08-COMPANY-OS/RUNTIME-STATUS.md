@@ -1,6 +1,6 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-07 03:12 UTC  
+**Updated:** 2026-09-07 04:38 UTC  
 **Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
 **Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
 
@@ -31,34 +31,64 @@ Automation third.
 AI last.
 ```
 
-## v0.8 certified stack
+## v0.8 repository implementation — COMPLETE
+
+The in-repository reference/runtime trust contract is complete and certified through the production-runtime wiring boundary:
 
 ```text
-HA readiness + active multi-client/fault probes
-digest-bound topology/probe evidence
-trusted deployment attestation
-time-bounded certification lifecycle
-bootstrap authority + handoff + permanent closure
-shared certification-plane state machine
-adapter/deployment attestation
-runtime adapter enrollment and revalidation
+HA readiness contract
+→ independent topology + behavioral/fault evidence
+→ trusted deployment attestation
+→ bounded certification lifecycle
+→ one-time bootstrap authority
+→ bootstrap-to-steady-state handoff
+→ permanent first-bootstrap closure
+→ shared certification-plane state
+→ adapter/deployment attestation
+→ durable runtime adapter enrollment
+→ per-operation deployment revalidation
+→ independent enrollment authority
+→ exact authority authorization binding
+→ shared production activation receipt
+→ production runtime requires enrollment + authority receipt
 ```
 
-## Runtime adapter enrollment — CERTIFIED REFERENCE CONTRACT
+## Final production-runtime safety boundary
 
-`kernel/certification_plane_enrollment.py` binds a verified adapter readiness decision to durable shared enrollment state. Enrollment records bind deployment digest, attestation digest, verifier receipt, trust-store identity, monotonic generation, enrollment time, expiry and revocation state.
+`kernel/certification_plane_production_runtime.py` closes the direct-registry bypass. A caller can no longer unlock the production runtime merely by writing a valid enrollment through `SharedAdapterEnrollmentRegistry`.
 
-`EnrolledCertificationPlaneRuntime` re-resolves deployment identity before every exposed certification-plane operation. Runtime use fails closed if enrollment is missing, revoked or expired, or if adapter implementation, backend capability digest, backend/cluster identity, topology evidence or probe evidence drift from the enrolled deployment.
+Production runtime requires two independently meaningful shared states on every guarded operation:
 
-Enrollment rotation requires a higher generation. Older generations are rejected. Revocation is shared and immediately visible across processes. Enrollment and revocation survive process restart. Expiry uses backend-authoritative time.
+```text
+1. current deployment has an ACTIVE, unexpired, exact-digest enrollment
+2. enrollment generation + deployment digest match a shared external-authority activation receipt
+```
+
+The activation receipt is fenced, versioned, journaled, cross-process visible and restart-safe. It binds deployment identity, enrollment generation, authorization digest, authority id/class, key id and authority generation.
+
+Controls include:
+
+```text
+direct enrollment bypass rejection
+safe crash gap between enrollment and activation receipt
+idempotent exact activation retry
+activation tamper detection
+direct enrollment rotation makes prior activation stale
+authorized rotation advances both enrollment and activation
+enrollment-generation rollback rejection
+authority-generation rollback rejection
+cross-process activation visibility
+restart recovery
+enrollment revocation overrides an existing activation receipt
+```
 
 ## Current certified checkpoint
 
 ```text
-Run ID: 34078721471
-Implementation/validator commit: 6979539bb7a21bbebcb4c93a68d1a250fc55d221
-Ran 388 tests in 73.815s
-388 / 388 PASS
+Run ID: 34083804714
+Implementation/validator commit: 37d0daa2ecca984a7b51b1e2b7166b56913178da
+Ran 415 tests in 7.289s
+415 / 415 PASS
 0 failures
 0 errors
 0 skipped
@@ -67,38 +97,48 @@ exact_test_count = true
 successful = true
 ```
 
-Exact surface:
+Incremental surface:
 
 ```text
-376 previously certified tests
- 12 runtime adapter-enrollment tests
+403 previously certified tests
+ 12 production runtime wiring tests
 ---
-388 targeted tests
+415 targeted tests
 ```
+
+## Milestone interpretation
+
+**Complete:** v0.8 repository contracts, reference implementations, runtime wiring, adversarial tests and exact-count validation.
+
+**Not complete / intentionally external:** deploying and certifying real production infrastructure.
+
+## External production blockers
+
+```text
+Real production HA backend................ NOT ENABLED
+Real topology control-plane adapter........ NOT ENABLED
+Real chaos/partition environment........... NOT ENABLED
+Production bootstrap authority............. NOT CONNECTED
+Production shared certification plane...... NOT DEPLOYED
+Production adapter attestation authority... NOT CONNECTED
+Production adapter enrollment authority.... NOT CONNECTED
+Production durable trust stores............ NOT CONNECTED
+Live production IdP........................ NOT ENABLED
+Production asymmetric/HSM anchor trust...... PENDING
+Production credentials..................... DENIED
+Production write providers................. DISABLED
+SQLite/reference stores.................... NOT PRODUCTION READY
+```
+
+No checked-in switch, test double, reference store or capability claim can convert those blockers into production readiness.
 
 ## PR state
 
 ```text
 PR #4............................. OPEN / DRAFT
+Do not merge without explicit user intent.
 ```
 
-## Explicit non-claims / production blockers
+## Next milestone
 
-```text
-Real production HA backend................ NOT ENABLED
-Real topology control-plane adapter........ NOT ENABLED
-Real chaos environment..................... NOT ENABLED
-Production bootstrap authority............. NOT CONNECTED
-Production shared certification plane...... NOT CONNECTED
-Production adapter attestation authority... NOT CONNECTED
-Production adapter enrollment authority.... NOT CONNECTED
-Reference stores........................... NOT PRODUCTION READY
-Production credentials..................... DENIED
-Production write providers................. DISABLED
-```
-
-The 388/388 checkpoint certifies reference contracts and adversarial rejection behavior only; it does not certify live production infrastructure.
-
-## Next exact engineering step
-
-Build the production adapter-enrollment authority/runtime wiring contract while preserving the same fail-closed posture and keeping all live credentials/providers disabled.
+After the documentation-synchronized head passes the same exact 415-test gate, start a **new feature branch** for production infrastructure adapters/deployment certification. v0.8 should remain a stable, frozen reference/runtime checkpoint rather than accumulating additional production integration code.
