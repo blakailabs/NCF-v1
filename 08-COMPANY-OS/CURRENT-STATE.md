@@ -8,26 +8,27 @@ Detailed status: `08-COMPANY-OS/RUNTIME-STATUS.md`
 ```text
 Repository: blakailabs/NCF-v1
 Branch: feature/company-kernel-production-infrastructure-v0.9
+PR: #5 — OPEN / DRAFT
 Milestone: Company Kernel Production Infrastructure v0.9
+Provider sequence: Spanner → YugabyteDB → identity/authorities/HSM → deployment automation
 Status: ACTIVE
 ```
 
 ## Merged certified baseline
 
 ```text
-v0.8 PR: #4
-v0.8 merge commit: eb47c7cfa9ab223f8e60847e651f2387edff0b08
-Final synchronized-head CI: 34083972113
-Certified head: ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e
+v0.8 PR #4: MERGED
+v0.8 merge: eb47c7cfa9ab223f8e60847e651f2387edff0b08
+v0.8 final CI: 34083972113
 415 / 415 PASS
 ```
 
-## Current v0.9 certified checkpoint
+## Current certified checkpoint — Spanner contract
 
 ```text
-CI run: 34084379611
-Certified validator/head: b8683d5a8c4a407cd7437d7736db50771dc9bf1c
-427 / 427 PASS
+CI run: 34086008840
+Certified implementation/validator head: e3ee98bca57d2f4c69bbc5c750fecb68e321d55f
+441 / 441 PASS
 0 failures
 0 errors
 0 skipped
@@ -39,55 +40,65 @@ successful = true
 Exact surface:
 
 ```text
-415 frozen v0.8 regression tests
- 12 production-infrastructure v0.9 contract tests
+415 frozen v0.8 regressions
+ 12 neutral production-infrastructure tests
+ 14 Spanner v0.9.1 contract tests
 ---
-427 targeted tests
+441 targeted tests
 ```
 
-## What v0.9 now certifies
+## What is now implemented
 
 ```text
-provider-neutral production infrastructure evidence bundle
-exact deployment/provider/adapter/backend/cluster identity binding
-required HA capability claim surface
-required certification evidence phases
-external verifier required
-provider self-certification forbidden
-external verifier independence required
-verifier receipt + production trust-store provenance required
-credential source class restricted to external identity/secret systems
-secret-like material rejected from evidence metadata
-evidence freshness + expiry enforced
-positive authority generation required
-frozen v0.8 safety baseline preserved
+provider-neutral production evidence contract
+Spanner deployment identity contract
+Spanner GoogleSQL + PostgreSQL schema plans
+commit-timestamp-backed ordering schema
+single-transaction fenced CAS + journal requirement
+external credential-reference-only rule
+emulator permanently barred from production certification
+live read/write probe channels disabled by default
+Spanner evidence template feeding neutral certifier
 ```
+
+## Critical distinction
+
+The **Spanner adapter contract is certified against the kernel**. A **live Spanner deployment is not yet certified**, because no real GCP project/instance/database, external credential path, topology evidence, or live fault/probe environment is connected.
 
 ## Production posture
 
 ```text
-Production credentials..................... DENIED
-Production write providers................. DISABLED
-Real production HA backend................ NOT CONNECTED
-Real topology source....................... NOT CONNECTED
-Real chaos controller...................... NOT CONNECTED
-Production bootstrap authority............. NOT CONNECTED
-Production shared certification plane...... NOT DEPLOYED
-Production adapter attestation authority... NOT CONNECTED
-Production adapter enrollment authority.... NOT CONNECTED
-Production durable trust stores............ NOT CONNECTED
-Production IdP............................. NOT CONNECTED
-Production asymmetric/HSM anchor trust..... NOT CONNECTED
+Production credentials................ DENIED
+Spanner live reads.................... DISABLED
+Spanner live writes................... DISABLED
+Real Spanner deployment............... NOT CONNECTED
+Spanner topology evidence............. NOT CONNECTED
+Independent Spanner fault control..... NOT CONNECTED
+External Spanner verifier/trust store. NOT CONNECTED
+YugabyteDB adapter.................... WAITING FOR SPANNER LIVE CERTIFICATION
+Production IdP/authorities/HSM........ WAITING
+Deployment automation................. WAITING
 ```
-
-The 427-test checkpoint certifies the **contract for production infrastructure**, not a live production deployment.
 
 ## Next exact engineering step
 
-Implement the first concrete adapter beneath the neutral contract only after selecting an actual deployment target. The first target should be the shared-state backend because topology, chaos, certification-plane and runtime evidence depend on it.
+Connect a real Spanner deployment target and execute the live certification phases defined in `SPANNER-v0.9.1.md`:
 
-Until a provider/deployment target is selected, no provider-specific implementation can be truthfully completed or certified.
+```text
+project + instance + database identity
+schema verification
+multi-client consistency
+serializability
+CAS
+fencing
+ordered journal
+atomic fenced CAS + journal
+commit timestamp ordering
+durability/restart
+topology evidence
+fault/quorum evidence
+external attestation
+neutral v0.9 certification
+```
 
-## Standing sync rule
-
-After every meaningful implementation or CI boundary: update `RUNTIME-STATUS.md`, this file, `PRODUCTION-INFRASTRUCTURE-v0.9.md`, and the active PR. Never call committed work certified without exact-count CI evidence.
+Do **not** begin YugabyteDB certification until Spanner has either passed live certification or been explicitly disqualified with preserved negative evidence.
