@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 403
+EXPECTED_TARGETED_TESTS = 415
 TESTS = [
     "test_action_safety_v05","test_action_crash_recovery_v05","test_action_reconciliation_v05","test_server_v05_integration",
     "test_live_adapter_safety_v06","test_v06_trust_bindings","test_provider_action_hardening_v06","test_server_v06_integration",
@@ -20,6 +20,7 @@ TESTS = [
     "test_ha_persistence_v08","test_ha_certification_runtime_v08","test_ha_probe_harness_v08","test_ha_evidence_pipeline_v08",
     "test_ha_bootstrap_authority_v08","test_ha_certification_handoff_v08","test_shared_certification_plane_v08",
     "test_certification_plane_attestation_v08","test_certification_plane_enrollment_v08","test_certification_plane_enrollment_authority_v08",
+    "test_certification_plane_production_runtime_v08",
 ]
 
 def main() -> int:
@@ -49,12 +50,16 @@ def main() -> int:
             "adapter backend cluster capability topology and probe drift fail closed","restart-safe enrollment and revocation state",
             "independent production adapter enrollment authorization","exact readiness deployment attestation and provenance binding",
             "enrollment authority class and generation enforcement","enrollment authorization nonce replay protection",
-            "authority-selected enrollment generation","reference enrollment authority cannot self-promote"
+            "authority-selected enrollment generation","reference enrollment authority cannot self-promote",
+            "shared authority activation receipt required for production runtime","direct enrollment registry writes cannot unlock production runtime",
+            "authority activation receipt generation and deployment binding","authority activation retry idempotency",
+            "production runtime requires active enrollment plus matching authority receipt on every operation","activation receipt survives restart and is cross-process visible",
+            "enrollment revocation overrides existing production activation"
         ],
         "sqlite_reference_production_ready":False,"real_ha_backend_enabled":False,"real_chaos_environment_enabled":False,
         "real_topology_control_plane_enabled":False,"production_bootstrap_authority_enabled":False,
         "production_shared_certification_plane_enabled":False,"production_adapter_attestation_authority_enabled":False,
-        "production_adapter_enrollment_authority_enabled":False,
+        "production_adapter_enrollment_authority_enabled":False,"production_runtime_enabled":False,
     }
     print("\nV0.8_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
     if not exact_test_count: print(f"V0.8_TEST_COUNT_MISMATCH expected={EXPECTED_TARGETED_TESTS} actual={result.testsRun}", file=sys.stderr)
