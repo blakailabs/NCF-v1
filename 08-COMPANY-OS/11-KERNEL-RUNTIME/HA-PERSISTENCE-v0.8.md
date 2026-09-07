@@ -7,18 +7,17 @@
 
 ## Purpose
 
-v0.8 distinguishes a semantic backend contract from a deployed HA system. Company OS does not certify HA from capability flags or configuration claims alone.
-
-Production readiness requires:
+v0.8 distinguishes semantic contracts from deployed HA guarantees. Company OS does not certify HA from capability flags or configuration claims alone.
 
 ```text
 backend capability contract
 + independently sourced topology/deployment evidence
-+ actively observed behavioral probes
-+ trusted external attestation
++ active behavioral/fault probes
++ trusted deployment attestation
 + time-bounded certification lifecycle
 + narrow first-certification bootstrap authority
-+ bootstrap-to-steady-state certification handoff
++ bootstrap-to-steady-state handoff
++ shared certification-plane state
 ```
 
 ## Evidence-first rule
@@ -30,204 +29,109 @@ Automation third.
 AI last.
 ```
 
-Universal distributed-systems properties are kept distinct from Company OS release policy. Minimum voting-member/failure-domain counts are release policy; read models are explicitly represented as quorum, leader-linearizable or serializable-transaction semantics.
+## Certified HA foundations
 
-## HA production-readiness contract
+`kernel/ha_persistence.py` defines deployment evidence and readiness. `kernel/ha_certification_runtime.py` defines bounded certification lifecycle. The active probe harness generates observed multi-client/fault evidence, and `kernel/ha_evidence_pipeline.py` binds independently sourced topology and probe reports by digest.
 
-`kernel/ha_persistence.py` models backend/cluster identity, monotonic topology epoch, voting membership, health/failure domains, consensus protocol, write quorum, read consistency, synchronous commit/acks, authoritative time, lease time, split-brain protection, behavioral probes and independent attestation.
+Certified controls include backend/cluster identity, topology epoch, quorum, synchronous durability, authoritative time, split-brain protection, evidence replay protection, attestation freshness and fail-closed certification.
 
-## Certification lifecycle
+## First-certification bootstrap and handoff
 
-`kernel/ha_certification_runtime.py` prevents HA readiness from becoming a timeless boolean.
+`kernel/ha_bootstrap_authority.py` solves first-certification circular trust with a narrowly bound external one-time permit. It may initialize only the deterministic bootstrap object and revalidates target backend capabilities before use.
 
-```text
-ACTIVE
-→ SUPERSEDED by higher topology epoch
-→ INVALIDATED explicitly
-→ unusable after valid_until
-```
+`kernel/ha_certification_handoff.py` verifies that bootstrap object, initializes exact shared certification-control state, activates the same evidence-bound certificate, rechecks expiry using backend-authoritative time, and permanently closes first-bootstrap authority.
 
-Rules include cluster-identity continuity, topology rollback protection, evidence-nonce replay protection, same-epoch conflict protection and backend-authoritative expiry checks.
+`kernel/ha_handoff_guard.py` denies all future first-bootstrap calls after closure. `HandoffCertifiedSharedPersistence` prevents an ACTIVE-before-CLOSED crash window from unlocking ordinary shared-state access.
 
-`CertifiedSharedPersistence` refuses shared-state access without a current active certification.
+## Shared certification plane
 
-The SQLite certification ledger is reference lifecycle machinery only; it is not claimed as the production HA control plane.
+`kernel/shared_certification_plane.py` is the provider-neutral reference state machine for globally visible certification authority.
 
-## Active conformance probes
+### State model
 
-`ResilientHAConformanceProbeHarness` generates evidence from observed multi-client behavior.
-
-Required probe identities:
+The shared object records:
 
 ```text
-serializable_transaction
-compare_and_swap
-monotonic_fencing
-ordered_journal
-multi_connection_visibility
-synchronous_durability
-authoritative_time
-quorum_loss_fail_closed
-stale_owner_rejected_after_takeover
-network_partition_single_writer
+contract + backend identity
+cluster identity
+highest topology epoch
+active certification record
+handoff lineage
+bootstrap_closed
+seen evidence nonces and evidence digests
+last invalidation
 ```
 
-Fault probes require a separate `HAChaosController`. Missing chaos control produces BLOCKED evidence rather than a false pass.
-
-## Digest-bound topology + probe evidence
-
-`kernel/ha_evidence_pipeline.py` combines an independently sourced `HATopologySnapshot` with the active probe report. The final evidence nonce is derived from topology, topology-source receipt and probe-report digests; callers cannot choose a nonce that disconnects certification from observed source material.
-
-## First-certification bootstrap authority
-
-`kernel/ha_bootstrap_authority.py` solves first-certification circular trust using a narrow external permit rather than a generic uncertified-backend bypass.
-
-Permit binding includes:
+Deterministic paths:
 
 ```text
-purpose = initialize_ha_certification_state_v08
-backend_id
-cluster_id
-topology_epoch
-evidence_digest
-certification_decision_digest
-attestation_digest
-authority_id / authority_class
-issued_at / expires_at
-permit_nonce
+state  /_cfhs/ha/certification/plane/<backend-digest>
+fence  /_cfhs/ha/certification/plane-fence/<backend-digest>
+stream ha-certification-plane:<backend-digest>
 ```
 
-The coordinator exposes no caller-selected object key and may initialize only:
+### Transaction model
+
+Every non-idempotent transition is guarded by a current writer fence and committed through the shared backend's `fenced_compare_and_swap_with_event` primitive:
 
 ```text
-/_cfhs/ha/certification/bootstrap/<backend-digest>
+assert current fence
++ expected shared-object version
++ expected ordered-journal version
+→ atomically update plane state
+→ atomically append transition event
 ```
 
-Before use, it revalidates the target backend's production capability contract. The one-time permit ledger reserves before write and supports idempotent crash recovery after write/before consume.
+A stale certifier cannot mutate after fence takeover. Competing same-epoch certifications cannot both become authoritative. Independent processes see the same active certification, invalidation and bootstrap closure state.
 
-## Bootstrap-to-steady-state handoff
+### Lifecycle semantics
 
-`kernel/ha_certification_handoff.py` turns the narrow externally authorized bootstrap state into steady-state certification authority without creating an access window between activation and bootstrap closure.
-
-### Exact bootstrap verification
-
-The handoff reconstructs `HABootstrapBinding` from the production-ready certification and deployment evidence, derives the canonical bootstrap object key, reads the object, verifies its exact stored digest, and verifies the following fields against the binding/result:
-
-```text
-contract/status
-backend_id
-cluster_id
-topology_epoch
-evidence_digest
-certification_decision_digest
-attestation_digest
-binding_digest
-permit_digest
-authority_receipt_digest
-```
-
-Tampered or mismatched bootstrap state fails closed before activation.
-
-### Shared certification-control object
-
-The only handoff control destination is deterministic:
-
-```text
-/_cfhs/ha/certification/control/<backend-digest>
-```
-
-Its value binds:
-
-```text
-backend + cluster + topology
-evidence nonce + evidence digest
-certification decision digest
-attestation digest
-bootstrap object + bootstrap state digest
-permit digest + authority receipt digest
-handoff digest
-```
-
-The object is written with put-if-absent and then read back exactly. Conflicting preexisting state fails closed.
-
-### Handoff lifecycle
-
-The reference lifecycle is:
+Initial lineage:
 
 ```text
 PREPARED
-→ control object bound
-→ certificate ACTIVE
-→ ACTIVATED
-→ active certificate expiry rechecked with backend-authoritative time
-→ CLOSED
+→ certification ACTIVATED
+→ handoff CLOSED
+→ bootstrap_closed = true
 ```
 
-Retries with the exact same handoff are idempotent. Cluster identity changes, topology rollback, changed bootstrap state, changed control state or changed certification identity are rejected.
+Steady-state recertification then allows a higher topology epoch to supersede the active certificate without reopening first-bootstrap authority.
 
-A crash can occur after the control write or after certificate activation and retry safely converges to the same state.
-
-### No activation-before-closure access window
-
-An ACTIVE certificate alone is not sufficient during this transition.
-
-`HandoffCertifiedSharedPersistence` requires:
+The plane rejects:
 
 ```text
-handoff status == CLOSED
-AND
-normal active certification check passes using backend-authoritative time
-```
-
-Therefore a crash after activation but before closure cannot unlock ordinary shared-state access.
-
-### Permanent first-bootstrap closure
-
-`kernel/ha_handoff_guard.py` wraps the bootstrap entry point. Once the handoff lineage is CLOSED, further first-bootstrap calls—including replay of the original permit—fail with `CFHS_HA_BOOTSTRAP_CLOSED`.
-
-The SQLite handoff ledger remains a reference lifecycle implementation only. Production closure authority must be durable and globally visible in the production shared certification plane or an equivalently strong independent control plane.
-
-## Certified adversarial surfaces
-
-Bootstrap authority attacks:
-
-```text
-one-time initialization
-consumed-permit replay
-expired permit
-wrong purpose/backend/cluster/topology/evidence
-verifier authority/binding mismatch
-same permit ID + altered content
-crash after backend write / before consume
-conflicting preexisting bootstrap state
-non-production-ready certification
-same backend ID + weaker capability contract
-```
-
-Steady-state handoff attacks:
-
-```text
-successful handoff
-idempotent repeated handoff
-crash before shared activation
-crash after shared activation before bootstrap closure
-bootstrap object tampering
-certificate/evidence mismatch
-cluster mismatch
+cluster identity drift
 topology rollback
-second first-bootstrap attempt after closure
-concurrent handoff attempts
-activation expiry during handoff
-steady-state access denied until handoff fully complete
+same-epoch conflicting evidence
+evidence-nonce reuse for different evidence
+stale writer fences
+activation without prepared initial handoff
+closure without matching active certificate
+closure after certificate expiry
+steady-state use before bootstrap closure
 ```
+
+`require_active()` uses backend-authoritative time and fails closed on missing or expired certification.
+
+### Production-readiness boundary
+
+`SharedStateCertificationPlane` is intentionally marked `reference_adapter_only = True`.
+
+Even when its test backend advertises the full shared-state capability contract, `readiness()` remains false because the adapter lacks:
+
+```text
+production_certification_plane_adapter_attestation
+```
+
+This prevents reference semantics from being confused with a production deployment. A later production adapter must independently prove deployment-instance identity and adapter trust in addition to the already-certified shared-state semantics.
 
 ## Current certification
 
 ```text
-Run ID: 34077423653
-Branch-head commit: 79d9bfc9dd61ccb05f98a61a421dc996d6c13ef8
-Ran 352 tests in 8.030s
-352 / 352 PASS
+Run ID: 34077833585
+Implementation/validator commit: 287d28850469a082d30a80a3649af363e494cda5
+Ran 364 tests in 8.163s
+364 / 364 PASS
 0 failures
 0 errors
 0 skipped
@@ -236,51 +140,65 @@ exact_test_count = true
 successful = true
 ```
 
-The handoff validator/code checkpoint was committed at `5fe41db3c519aafe583dd3d858c9d0755a9481c7`; the later synchronized head passed the same exact validator.
-
 Exact surface:
 
 ```text
 264  frozen v0.5-v0.7 regressions
  21  HA production-readiness tests
- 15  HA certification lifecycle/runtime guard tests
+ 15  certification lifecycle/runtime tests
  14  active conformance probe-harness tests
  11  digest-bound evidence-pipeline tests
  15  bootstrap-authority adversarial tests
  12  bootstrap-to-steady-state handoff tests
+ 12  shared certification-plane tests
 ---
-352 targeted tests
+364 targeted tests
 ```
 
-## What 352/352 does NOT certify
+Shared-plane adversarial surface:
 
 ```text
-A real distributed SQL/consensus backend.......... NOT ENABLED
+cross-process active-certificate visibility
+concurrent same-epoch activation conflict
+same-evidence idempotency
+higher-epoch supersession
+lower-epoch rollback rejection
+cluster identity conflict
+cross-process invalidation visibility
+backend-authoritative expiry visibility
+shared handoff closure visibility
+stale certifier fence rejection
+control-plane restart recovery
+reference adapter cannot claim production readiness
+```
+
+## What 364/364 does NOT certify
+
+```text
+Real distributed SQL/consensus backend............ NOT ENABLED
 Actual provider topology source.................... NOT CONNECTED
 Actual chaos/partition controller.................. NOT CONNECTED
 Production external bootstrap authority............ NOT CONNECTED
 Production permit single-use control plane......... NOT CONNECTED
-Production shared certification control plane...... NOT IMPLEMENTED
+Production shared certification-plane adapter...... NOT CONNECTED
+Production adapter attestation..................... NOT IMPLEMENTED
 Production credentials............................. DISABLED
 Production writes.................................. DISABLED
 ```
 
-Reference tests prove contracts, recovery semantics and rejection behavior; they do not upgrade SQLite or simulated control-plane components to production infrastructure.
+## Next boundary — adapter attestation
 
-## Next boundary — shared certification plane
-
-The next v0.8 boundary is to replace process-local/reference lifecycle authority with a provider-neutral shared certification-plane contract.
-
-Required shape:
+A production certification plane must prove more than correct state-machine semantics. The next contract will bind a concrete deployment instance and adapter implementation to independent trust evidence:
 
 ```text
-shared certification-plane interface
-→ transactional certification ACTIVE/SUPERSEDED/INVALIDATED state
-→ durable PREPARED/ACTIVATED/CLOSED handoff lineage
-→ CAS/fencing for competing certifiers
-→ backend-authoritative expiry
-→ globally visible bootstrap closure
-→ fail-closed adapter certification before any production use
+deployment-instance identity
++ adapter implementation digest/version
++ backend + cluster identity
++ shared-state capabilities
++ independent authority/key generation
++ fresh attestation receipt
++ replay/rollback protection
+→ production certification-plane adapter readiness
 ```
 
-No production backend, credentials or write providers are enabled by this work.
+No production credentials, backend or provider writes are enabled by this work.
