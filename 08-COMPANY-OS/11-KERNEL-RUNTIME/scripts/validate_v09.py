@@ -13,8 +13,12 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from validate_v08 import TESTS as V08_TESTS  # noqa: E402
 
 EXPECTED_V08_BASELINE = 415
-EXPECTED_TARGETED_TESTS = 441
-TESTS = list(V08_TESTS) + ["test_production_infrastructure_v09", "test_spanner_backend_v091"]
+EXPECTED_TARGETED_TESTS = 453
+TESTS = list(V08_TESTS) + [
+    "test_production_infrastructure_v09",
+    "test_spanner_backend_v091",
+    "test_spanner_live_certification_v091",
+]
 
 
 def main() -> int:
@@ -49,34 +53,25 @@ def main() -> int:
         "spanner_live_integration_enabled": False,
         "v09_controls": [
             "provider-neutral production infrastructure evidence bundle",
-            "exact deployment provider adapter backend cluster identity binding",
-            "required HA capability claim surface",
-            "required deployment evidence phase surface",
-            "external verifier required",
+            "external verifier and trust provenance required",
             "provider self-certification forbidden",
-            "external verifier independence required",
-            "verifier receipt and trust-store provenance required",
-            "credential source class constrained to external identity/secret systems",
-            "secret-like material rejected from evidence metadata",
-            "evidence freshness and expiry enforced",
-            "positive authority generation required",
-            "Spanner project instance database dialect deployment identity binding",
-            "Spanner commit-timestamp schema contract",
+            "Spanner deployment and schema identity binding",
             "Spanner emulator permanently excluded from production certification",
-            "Spanner credentials restricted to external secret references",
-            "Spanner live read and write evidence channels disabled by default",
-            "Spanner production evidence cannot be emitted without explicit live channels",
-            "Spanner fenced CAS plus ordered journal required in one read-write transaction",
-            "Spanner provider evidence feeds neutral v0.9 certifier",
+            "Spanner external credential references only",
+            "Spanner live channels disabled by default",
+            "fourteen ordered Spanner live certification phases",
+            "PASS requires observed evidence",
+            "FAIL and BLOCKED require explicit reason",
+            "probe exceptions preserved as FAIL",
+            "negative phase stops dependent later authority phases",
+            "independent live probe driver required",
+            "live report digest binds deployment and negative evidence",
             "v0.8 exact 415-test baseline preserved",
         ],
     }
     print("\nV0.9_VALIDATION_SUMMARY=" + json.dumps(summary, sort_keys=True))
     if not exact_test_count:
-        print(
-            f"V0.9_TEST_COUNT_MISMATCH expected={EXPECTED_TARGETED_TESTS} actual={result.testsRun}",
-            file=sys.stderr,
-        )
+        print(f"V0.9_TEST_COUNT_MISMATCH expected={EXPECTED_TARGETED_TESTS} actual={result.testsRun}", file=sys.stderr)
     return 0 if successful else 1
 
 
