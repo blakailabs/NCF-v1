@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 388
+EXPECTED_TARGETED_TESTS = 403
 TESTS = [
     "test_action_safety_v05","test_action_crash_recovery_v05","test_action_reconciliation_v05","test_server_v05_integration",
     "test_live_adapter_safety_v06","test_v06_trust_bindings","test_provider_action_hardening_v06","test_server_v06_integration",
@@ -19,7 +19,7 @@ TESTS = [
     "test_recoverable_anchor_consumers_v07","test_server_v07_anchor_wiring",
     "test_ha_persistence_v08","test_ha_certification_runtime_v08","test_ha_probe_harness_v08","test_ha_evidence_pipeline_v08",
     "test_ha_bootstrap_authority_v08","test_ha_certification_handoff_v08","test_shared_certification_plane_v08",
-    "test_certification_plane_attestation_v08","test_certification_plane_enrollment_v08",
+    "test_certification_plane_attestation_v08","test_certification_plane_enrollment_v08","test_certification_plane_enrollment_authority_v08",
 ]
 
 def main() -> int:
@@ -46,7 +46,10 @@ def main() -> int:
             "durable reference adapter trust ledger restart recovery","production adapter readiness requires external verifier plus production trust store",
             "durable adapter enrollment bound to verified readiness","monotonic enrollment generation","backend-authoritative enrollment expiry",
             "runtime deployment identity revalidation on every guarded operation","cross-process enrollment revocation visibility",
-            "adapter backend cluster capability topology and probe drift fail closed","restart-safe enrollment and revocation state"
+            "adapter backend cluster capability topology and probe drift fail closed","restart-safe enrollment and revocation state",
+            "independent production adapter enrollment authorization","exact readiness deployment attestation and provenance binding",
+            "enrollment authority class and generation enforcement","enrollment authorization nonce replay protection",
+            "authority-selected enrollment generation","reference enrollment authority cannot self-promote"
         ],
         "sqlite_reference_production_ready":False,"real_ha_backend_enabled":False,"real_chaos_environment_enabled":False,
         "real_topology_control_plane_enabled":False,"production_bootstrap_authority_enabled":False,
