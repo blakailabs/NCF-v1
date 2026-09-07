@@ -14,15 +14,14 @@ NCF remains the constitutional governance layer inside the broader Company Opera
 
 `RUNTIME-STATUS.md` is the canonical detailed resumability checkpoint. `CURRENT-STATE.md` is the concise pickup file. A committed change is never called certified until exact-count CI passes.
 
-## Merged certified baseline
+## Merged baseline
 
 ```text
 v0.8 PR #4........................ MERGED
 v0.8 merge commit................. eb47c7cfa9ab223f8e60847e651f2387edff0b08
-final synchronized-head CI........ 34083972113
-certified v0.8 head................ ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e
+v0.8 final synchronized-head CI.... 34083972113
+v0.8 certified head................ ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e
 415 / 415 PASS
-0 failures / 0 errors / 0 skipped
 ```
 
 ## Evidence-first doctrine
@@ -34,66 +33,75 @@ Automation third.
 AI last.
 ```
 
-## v0.8 frozen invariants carried into v0.9
+## v0.9 provider-neutral production contract — CERTIFIED
+
+`kernel/production_infrastructure_v09.py` defines the first production-infrastructure certification boundary. It does not connect or impersonate a provider. It defines the evidence a real provider adapter must produce before the kernel can treat it as production-ready.
+
+### Evidence identity
+
+The bundle binds:
 
 ```text
-fail-closed shared-state capability contract
-independent topology + active fault evidence
-time-bounded certification
-one-time bootstrap authority
-bootstrap-to-steady-state handoff
-permanent bootstrap closure
-shared certification-plane state
-adapter/deployment attestation
-runtime enrollment + revalidation
-independent enrollment authority
-shared external-authority activation receipt
-production runtime requires enrollment + activation receipt
-no reference/test-double self-promotion
+deployment_id
+provider_id
+adapter name/version/implementation digest
+backend_id
+cluster_id
+capability digest
+topology evidence digest
+probe evidence digest
+release attestation digest
+trust-store identity
+authority identity/class/generation
+credential source class
+observed_at / valid_until
+evidence nonce
+required capability claims
+required certification phases
 ```
 
-These are regression requirements. v0.9 adapters must satisfy them rather than bypass or weaken them.
-
-## v0.9 mission
-
-Create the production infrastructure boundary that can connect real systems to the certified kernel contracts while preserving provider neutrality and evidence-based readiness.
-
-## v0.9 planned adapter surfaces
+### Certified rejection rules
 
 ```text
-ProductionSharedStateBackendAdapter
-ProductionTopologySourceAdapter
-ProductionChaosControllerAdapter
-ProductionBootstrapAuthorityAdapter
-ProductionCertificationPlaneAdapter
-ProductionAdapterAttestationAuthorityAdapter
-ProductionEnrollmentAuthorityAdapter
-ProductionIdentityProviderAdapter
-ProductionAnchorTrustAdapter
-ProductionDeploymentEvidenceBundle
+missing external verifier → deny
+provider self-certification → deny
+verifier not independent → deny
+verifier digest mismatch → deny
+missing required HA capability → deny
+missing fault/partition evidence phase → deny
+stale/expired evidence → deny
+invalid credential source class → deny
+secret-like material in evidence metadata → deny
+non-positive authority generation → deny
 ```
 
-## Certification doctrine for real adapters
+The positive contract path requires an independent verifier receipt and production trust-store provenance.
 
-A real adapter is not production-ready merely because it is configured or reachable. Certification must prove:
+## Current certified checkpoint
 
 ```text
-exact deployment identity
-provider/release identity
-capability evidence
-observed behavioral probes
-fault/partition behavior where applicable
-authoritative time behavior
-quorum/topology behavior
-durable trust-store provenance
-external authority verification
-credential source class without committing secrets
-freshness/expiry
-rollback/replay protection
-restart + cross-process persistence
+Run ID: 34084379611
+Implementation/validator head: b8683d5a8c4a407cd7437d7736db50771dc9bf1c
+Ran 427 tests in 6.709s
+427 / 427 PASS
+0 failures
+0 errors
+0 skipped
+compile_ok = true
+exact_test_count = true
+successful = true
 ```
 
-## Production posture at milestone start
+Exact surface:
+
+```text
+415 frozen v0.8 tests
+ 12 production-infrastructure v0.9 tests
+---
+427 targeted tests
+```
+
+## Production posture
 
 ```text
 Real production HA backend................ NOT CONNECTED
@@ -110,10 +118,12 @@ Production credentials..................... DENIED
 Production write providers................. DISABLED
 ```
 
-## Current certification state
+## Boundary between completed and blocked work
 
-The active v0.9 branch inherits the merged v0.8 code. Until a v0.9 validator is introduced, the **415-test v0.8 suite remains the exact frozen regression gate**.
+The **provider-neutral contract** can be and now is implemented/certified in-repository.
+
+A **concrete provider adapter** cannot be truthfully completed until an actual deployment target is selected because provider APIs, topology semantics, transaction guarantees, identity plumbing, fault controls and trust mechanisms are deployment-specific evidence sources.
 
 ## Next exact engineering step
 
-Implement `PRODUCTION-INFRASTRUCTURE-v0.9.md` plus the provider-neutral adapter/evidence contract and adversarial contract tests. Do not select a concrete provider by assumption; provider-specific adapters must be separate implementations beneath the neutral contract.
+Select the first real shared-state deployment target, then implement its adapter beneath the v0.9 neutral contract. Do not alter the contract to make a weak provider pass; the provider must satisfy the contract or remain non-production.
