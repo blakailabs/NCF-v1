@@ -15,9 +15,9 @@ Milestone: Company Kernel HA Persistence Safety v0.8
 ## Last certified checkpoint
 
 ```text
-Final synchronized CI run: 34077965760
-Certified synchronized head: 6300d6174b7dc39d95864eb1cd4ee1a6f9582783
-364 / 364 PASS
+CI run: 34078192031
+Certified implementation/validator commit: 350e608859d3d96f841099ff5248652a68dd6ede
+376 / 376 PASS
 0 failures
 0 errors
 0 skipped
@@ -26,37 +26,41 @@ exact_test_count = true
 successful = true
 ```
 
-## Current candidate — NOT YET CERTIFIED
+Adapter attestation contract: `b979cc9c56134640470a8b9f95a3f0ded91b4cbb`  
+Durable reference trust ledger: `6dba3782fc631090cadb5a90bcc1ad681edfffd4`  
+Adversarial tests: `7a34a291501b869781ca8c1fc8008b2a3eb68ace`
+
+## What is certified in v0.8
 
 ```text
-Adapter attestation contract: b979cc9c56134640470a8b9f95a3f0ded91b4cbb
-Durable reference trust ledger: 6dba3782fc631090cadb5a90bcc1ad681edfffd4
-Adversarial tests: 7a34a291501b869781ca8c1fc8008b2a3eb68ace
-376-test validator: 350e608859d3d96f841099ff5248652a68dd6ede
-Expected exact count: 376
-Status: awaiting exact-count CI certification
-```
-
-Candidate adapter readiness requires all of:
-
-```text
-shared backend semantic capability contract
-exact deployment-instance identity
-backend + cluster identity binding
-trusted adapter name + implementation release digest
+HA deployment-readiness contract
+active multi-client/fault probe harness
+digest-bound topology + probe evidence assembly
+trusted deployment attestation contract
+time-bounded certification lifecycle
+backend-authoritative expiry checks
+topology rollback protection
+cluster identity continuity
+evidence nonce replay protection
+bootstrap authority + one-time replay protection
+bootstrap-to-steady-state handoff
+permanent first-bootstrap closure
+closure-aware certified persistence
+shared certification-plane state machine
+cross-process certification/invalidation/closure visibility
+fenced CAS + ordered-journal certification mutations
+deployment-bound certification-plane adapter attestation
+adapter implementation release digest binding
 backend capability digest binding
-topology evidence digest binding
-probe evidence digest binding
-fresh independent adapter attestation
-verified authority/key/generation binding
-production-ready durable attestation trust store
-nonce replay protection
-authority-generation rollback protection
+topology + probe evidence digest binding
+attestation freshness/expiry
+authority/key generation rollback protection
+attestation nonce replay protection
+durable restart-safe reference trust ledger semantics
+production-ready decision requires external verifier + production-grade trust store
 ```
 
-The included SQLite attestation trust ledger is reference-only and explicitly reports NOT production-ready. A test-only production-ready trust-store double proves the contract path; it is not production infrastructure.
-
-Candidate adversarial tests:
+## Adapter-attestation adversarial surface
 
 ```text
 missing adapter attestation rejected
@@ -73,23 +77,14 @@ reference trust store keeps adapter non-production
 production-ready decision requires semantics + external verification + production trust store
 ```
 
-**Do not call adapter attestation certified until GitHub Actions confirms 376/376 with 0 failures/errors/skips.**
+The positive production-readiness path uses a **test-only trust-store double** solely to prove the contract. No shipped reference store or real deployment has been promoted to production-ready.
 
-## Already certified v0.8 stack
+## PR state
 
 ```text
-HA deployment-readiness contract
-active multi-client/fault probe harness
-digest-bound topology + probe evidence assembly
-trusted deployment attestation contract
-time-bounded certification lifecycle
-bootstrap authority + replay protection
-bootstrap-to-steady-state handoff
-permanent first-bootstrap closure
-closure-aware certified persistence
-shared certification-plane state machine
-cross-process certification/invalidation/closure visibility
-fenced CAS + ordered-journal certification mutations
+Only open PR: #4
+PR #4 state: OPEN / DRAFT
+Keep draft while v0.8 production-boundary work continues.
 ```
 
 ## Production posture
@@ -101,20 +96,41 @@ Real production HA backend............... NOT ENABLED
 Real topology source..................... NOT CONNECTED
 Real chaos controller.................... NOT CONNECTED
 Production bootstrap authority........... NOT CONNECTED
+Production one-time permit ledger........ NOT CONNECTED
 Production shared certification plane.... NOT CONNECTED
 Production adapter attestation authority. NOT CONNECTED
-Reference adapter trust ledger........... NOT PRODUCTION READY
+SQLite reference adapter trust ledger.... NOT PRODUCTION READY
 ```
 
-## Next exact action
+## Next exact engineering step
+
+Build **durable adapter enrollment + runtime revalidation** so a one-time attestation decision cannot become stale paperwork disconnected from the running control plane:
 
 ```text
-1. inspect exact-count CI for the 376-test candidate
-2. repair failures without weakening trust boundaries
-3. if 376/376 passes, sync RUNTIME-STATUS.md
-4. sync this CURRENT-STATE.md to the certified run/commit
-5. sync HA-PERSISTENCE-v0.8.md and PR #4
-6. verify final documentation-synchronized branch-head CI
+verified adapter readiness decision
+→ durable enrollment record bound to deployment + attestation + verifier receipt
+→ monotonic enrollment generation
+→ runtime control-plane guard checks current deployment identity
+→ runtime guard checks enrollment freshness and revocation
+→ changed adapter/backend/cluster/capabilities/evidence fails closed
+→ rotation/revocation visible across processes
+```
+
+Required next test themes:
+
+```text
+no enrollment denies runtime access
+valid enrollment allows reference runtime path only under test policy
+wrong deployment digest denied
+changed adapter implementation denied
+changed backend capability digest denied
+cluster drift denied
+topology/probe evidence drift denied
+enrollment expiry denied
+cross-process revocation visibility
+monotonic enrollment rotation
+older enrollment generation rollback denied
+restart preserves enrollment/revocation state
 ```
 
 ## Standing sync rule
