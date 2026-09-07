@@ -20,6 +20,14 @@ v0.8 merge commit: eb47c7cfa9ab223f8e60847e651f2387edff0b08
 Final synchronized-head CI: 34083972113
 Certified head: ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e
 415 / 415 PASS
+```
+
+## Current v0.9 certified checkpoint
+
+```text
+CI run: 34084379611
+Certified validator/head: b8683d5a8c4a407cd7437d7736db50771dc9bf1c
+427 / 427 PASS
 0 failures
 0 errors
 0 skipped
@@ -28,32 +36,34 @@ exact_test_count = true
 successful = true
 ```
 
-## v0.9 purpose
-
-Move from certified reference/runtime contracts to real provider-neutral production infrastructure adapters and deployment evidence **without weakening any v0.8 invariant**.
-
-The provider must satisfy the kernel contract; the kernel contract must not be weakened to fit a provider.
-
-## v0.9 workstreams
+Exact surface:
 
 ```text
-1. production shared-state backend adapter boundary
-2. real topology/source-of-truth adapter boundary
-3. real chaos/fault-controller boundary
-4. production bootstrap authority integration contract
-5. production certification-plane deployment adapter
-6. production adapter-attestation authority/trust-store integration
-7. production enrollment-authority/trust-store integration
-8. production identity/IdP integration boundary
-9. asymmetric/HSM-backed anchor trust integration
-10. deployment certification + evidence bundle
+415 frozen v0.8 regression tests
+ 12 production-infrastructure v0.9 contract tests
+---
+427 targeted tests
 ```
 
-## Non-negotiable production gate
+## What v0.9 now certifies
 
-No infrastructure adapter becomes production-ready because of configuration booleans, test doubles, reference stores, or caller assertions. Production readiness requires observed behavior, independently verifiable evidence, external trust, exact deployment identity binding, and fresh certification.
+```text
+provider-neutral production infrastructure evidence bundle
+exact deployment/provider/adapter/backend/cluster identity binding
+required HA capability claim surface
+required certification evidence phases
+external verifier required
+provider self-certification forbidden
+external verifier independence required
+verifier receipt + production trust-store provenance required
+credential source class restricted to external identity/secret systems
+secret-like material rejected from evidence metadata
+evidence freshness + expiry enforced
+positive authority generation required
+frozen v0.8 safety baseline preserved
+```
 
-## Production posture at v0.9 start
+## Production posture
 
 ```text
 Production credentials..................... DENIED
@@ -70,10 +80,14 @@ Production IdP............................. NOT CONNECTED
 Production asymmetric/HSM anchor trust..... NOT CONNECTED
 ```
 
+The 427-test checkpoint certifies the **contract for production infrastructure**, not a live production deployment.
+
 ## Next exact engineering step
 
-Define the provider-neutral **Production Infrastructure Adapter Contract v0.9** and its certification evidence schema before selecting or connecting a concrete infrastructure provider. Preserve the full 415-test v0.8 suite as the frozen regression baseline.
+Implement the first concrete adapter beneath the neutral contract only after selecting an actual deployment target. The first target should be the shared-state backend because topology, chaos, certification-plane and runtime evidence depend on it.
+
+Until a provider/deployment target is selected, no provider-specific implementation can be truthfully completed or certified.
 
 ## Standing sync rule
 
-After every meaningful implementation or CI boundary: update `RUNTIME-STATUS.md`, this file, the active milestone architecture doc, and the active PR. Never call committed work certified without exact-count CI evidence.
+After every meaningful implementation or CI boundary: update `RUNTIME-STATUS.md`, this file, `PRODUCTION-INFRASTRUCTURE-v0.9.md`, and the active PR. Never call committed work certified without exact-count CI evidence.
