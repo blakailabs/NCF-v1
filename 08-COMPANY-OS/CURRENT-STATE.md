@@ -15,9 +15,9 @@ Milestone: Company Kernel HA Persistence Safety v0.8
 ## Last certified checkpoint
 
 ```text
-CI run: 34078721471
-Certified implementation/validator commit: 6979539bb7a21bbebcb4c93a68d1a250fc55d221
-388 / 388 PASS
+CI run: 34083328094
+Certified implementation/validator commit: 8fca2e1385f41d7012a956fbe01a0d67f03694ca
+403 / 403 PASS
 0 failures
 0 errors
 0 skipped
@@ -26,10 +26,40 @@ exact_test_count = true
 successful = true
 ```
 
-Runtime enrollment implementation: `f7f427a1d084151b122241c0529c2dce1e712aee`  
-Adversarial tests: `3512dd004716610a117536f228b70c3193542b09`
+The 403 checkpoint certifies the independent production adapter-enrollment authority boundary.
 
-## What is certified in v0.8
+## Current candidate — NOT YET CERTIFIED
+
+```text
+Production runtime wiring implementation: fdecf6be057f578b189f8e8217e5cc0d20046643
+Adversarial tests: ce393a49c1e3bb6023de82be3f720c416b22df13
+415-test validator: 37d0daa2ecca984a7b51b1e2b7166b56913178da
+Expected exact count: 415
+Status: awaiting exact-count CI certification
+```
+
+Candidate closes the direct-enrollment bypass by requiring a shared, fenced, journaled external-authority activation receipt in addition to ordinary enrollment. Production runtime rechecks both on every guarded operation.
+
+Candidate test surface:
+
+```text
+direct registry enrollment cannot unlock production runtime
+authority activation receipt unlocks guarded runtime
+exact authority activation retry is idempotent
+enrollment-before-receipt crash gap remains denied and recovers safely
+tampered activation receipt fails closed
+direct enrollment rotation makes old activation stale
+authorized rotation updates activation and runtime
+enrollment-generation rollback rejected
+authority-generation rollback rejected
+cross-process activation receipt visibility
+restart preserves authority activation receipt
+enrollment revocation overrides existing activation receipt
+```
+
+**Do not call production runtime wiring certified until GitHub Actions confirms 415/415 with 0 failures/errors/skips.**
+
+## Already certified v0.8 stack
 
 ```text
 HA deployment readiness + active probes
@@ -37,35 +67,13 @@ digest-bound evidence + trusted attestation
 time-bounded certification lifecycle
 bootstrap authority + handoff + permanent closure
 shared certification-plane state machine
-fenced CAS + ordered-journal certification mutations
 adapter deployment attestation
-release/capability/topology/probe digest bindings
-authority generation + nonce replay protection
-durable reference attestation trust ledger semantics
-durable adapter enrollment bound to verified readiness
-monotonic enrollment generation
-backend-authoritative enrollment expiry
-runtime deployment revalidation on every guarded operation
-cross-process enrollment revocation visibility
-adapter/backend/cluster/capability/topology/probe drift fail closed
-restart-safe enrollment and revocation state
-```
-
-## Runtime-enrollment adversarial surface
-
-```text
-no enrollment denies runtime access
-valid enrollment allows guarded access
-readiness/deployment mismatch denied
-adapter implementation drift denied
-backend capability drift denied
-cluster drift denied
-topology/probe evidence drift denied
-enrollment expiry denied
-cross-process revocation immediately visible
-monotonic enrollment rotation
-older enrollment generation rollback denied
-restart preserves enrollment/revocation state
+durable runtime adapter enrollment
+independent enrollment authority
+exact readiness/deployment/attestation/provenance authorization binding
+authority generation + authorization nonce replay protection
+authority-selected enrollment generation
+reference authority cannot self-promote
 ```
 
 ## Production posture
@@ -80,13 +88,17 @@ Production bootstrap authority........... NOT CONNECTED
 Production shared certification plane.... NOT CONNECTED
 Production adapter attestation authority. NOT CONNECTED
 Production adapter enrollment authority.. NOT CONNECTED
+Production runtime....................... NOT ENABLED
 Reference stores......................... NOT PRODUCTION READY
 ```
 
-## Next exact engineering step
+## Next exact action
 
-Build the production adapter-enrollment authority boundary and runtime wiring without enabling live credentials or production writes.
-
-## Standing sync rule
-
-After every meaningful implementation or CI boundary: update `RUNTIME-STATUS.md`, this file, the milestone architecture doc, and PR #4. Never call committed work certified without exact-count CI evidence.
+```text
+1. inspect 415-test CI
+2. repair any exposed invariant without weakening the gate
+3. if 415/415 passes, promote production runtime wiring to certified
+4. sync RUNTIME-STATUS.md + this file + HA-PERSISTENCE-v0.8.md + PR #4
+5. verify documentation-synchronized branch-head CI
+6. close v0.8 implementation work as COMPLETE / external deployment pending
+```
