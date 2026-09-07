@@ -1,8 +1,7 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-07 04:38 UTC  
-**Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
-**Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
+**Engineering branch:** `feature/company-kernel-production-infrastructure-v0.9`  
+**Milestone:** Company Kernel Production Infrastructure v0.9
 
 ## Project identity
 
@@ -15,11 +14,15 @@ NCF remains the constitutional governance layer inside the broader Company Opera
 
 `RUNTIME-STATUS.md` is the canonical detailed resumability checkpoint. `CURRENT-STATE.md` is the concise pickup file. A committed change is never called certified until exact-count CI passes.
 
-## Merged baseline
+## Merged certified baseline
 
 ```text
-v0.7 merge/base: 25382c018e8bf3cfe426940afc8f622b526ba191
-v0.7 certification: 264 / 264 PASS
+v0.8 PR #4........................ MERGED
+v0.8 merge commit................. eb47c7cfa9ab223f8e60847e651f2387edff0b08
+final synchronized-head CI........ 34083972113
+certified v0.8 head................ ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e
+415 / 415 PASS
+0 failures / 0 errors / 0 skipped
 ```
 
 ## Evidence-first doctrine
@@ -31,114 +34,86 @@ Automation third.
 AI last.
 ```
 
-## v0.8 repository implementation — COMPLETE
-
-The in-repository reference/runtime trust contract is complete and certified through the production-runtime wiring boundary:
+## v0.8 frozen invariants carried into v0.9
 
 ```text
-HA readiness contract
-→ independent topology + behavioral/fault evidence
-→ trusted deployment attestation
-→ bounded certification lifecycle
-→ one-time bootstrap authority
-→ bootstrap-to-steady-state handoff
-→ permanent first-bootstrap closure
-→ shared certification-plane state
-→ adapter/deployment attestation
-→ durable runtime adapter enrollment
-→ per-operation deployment revalidation
-→ independent enrollment authority
-→ exact authority authorization binding
-→ shared production activation receipt
-→ production runtime requires enrollment + authority receipt
+fail-closed shared-state capability contract
+independent topology + active fault evidence
+time-bounded certification
+one-time bootstrap authority
+bootstrap-to-steady-state handoff
+permanent bootstrap closure
+shared certification-plane state
+adapter/deployment attestation
+runtime enrollment + revalidation
+independent enrollment authority
+shared external-authority activation receipt
+production runtime requires enrollment + activation receipt
+no reference/test-double self-promotion
 ```
 
-## Final production-runtime safety boundary
+These are regression requirements. v0.9 adapters must satisfy them rather than bypass or weaken them.
 
-`kernel/certification_plane_production_runtime.py` closes the direct-registry bypass. A caller can no longer unlock the production runtime merely by writing a valid enrollment through `SharedAdapterEnrollmentRegistry`.
+## v0.9 mission
 
-Production runtime requires two independently meaningful shared states on every guarded operation:
+Create the production infrastructure boundary that can connect real systems to the certified kernel contracts while preserving provider neutrality and evidence-based readiness.
+
+## v0.9 planned adapter surfaces
 
 ```text
-1. current deployment has an ACTIVE, unexpired, exact-digest enrollment
-2. enrollment generation + deployment digest match a shared external-authority activation receipt
+ProductionSharedStateBackendAdapter
+ProductionTopologySourceAdapter
+ProductionChaosControllerAdapter
+ProductionBootstrapAuthorityAdapter
+ProductionCertificationPlaneAdapter
+ProductionAdapterAttestationAuthorityAdapter
+ProductionEnrollmentAuthorityAdapter
+ProductionIdentityProviderAdapter
+ProductionAnchorTrustAdapter
+ProductionDeploymentEvidenceBundle
 ```
 
-The activation receipt is fenced, versioned, journaled, cross-process visible and restart-safe. It binds deployment identity, enrollment generation, authorization digest, authority id/class, key id and authority generation.
+## Certification doctrine for real adapters
 
-Controls include:
+A real adapter is not production-ready merely because it is configured or reachable. Certification must prove:
 
 ```text
-direct enrollment bypass rejection
-safe crash gap between enrollment and activation receipt
-idempotent exact activation retry
-activation tamper detection
-direct enrollment rotation makes prior activation stale
-authorized rotation advances both enrollment and activation
-enrollment-generation rollback rejection
-authority-generation rollback rejection
-cross-process activation visibility
-restart recovery
-enrollment revocation overrides an existing activation receipt
+exact deployment identity
+provider/release identity
+capability evidence
+observed behavioral probes
+fault/partition behavior where applicable
+authoritative time behavior
+quorum/topology behavior
+durable trust-store provenance
+external authority verification
+credential source class without committing secrets
+freshness/expiry
+rollback/replay protection
+restart + cross-process persistence
 ```
 
-## Current certified checkpoint
+## Production posture at milestone start
 
 ```text
-Run ID: 34083804714
-Implementation/validator commit: 37d0daa2ecca984a7b51b1e2b7166b56913178da
-Ran 415 tests in 7.289s
-415 / 415 PASS
-0 failures
-0 errors
-0 skipped
-compile_ok = true
-exact_test_count = true
-successful = true
-```
-
-Incremental surface:
-
-```text
-403 previously certified tests
- 12 production runtime wiring tests
----
-415 targeted tests
-```
-
-## Milestone interpretation
-
-**Complete:** v0.8 repository contracts, reference implementations, runtime wiring, adversarial tests and exact-count validation.
-
-**Not complete / intentionally external:** deploying and certifying real production infrastructure.
-
-## External production blockers
-
-```text
-Real production HA backend................ NOT ENABLED
-Real topology control-plane adapter........ NOT ENABLED
-Real chaos/partition environment........... NOT ENABLED
+Real production HA backend................ NOT CONNECTED
+Real topology control-plane adapter........ NOT CONNECTED
+Real chaos/partition environment........... NOT CONNECTED
 Production bootstrap authority............. NOT CONNECTED
 Production shared certification plane...... NOT DEPLOYED
 Production adapter attestation authority... NOT CONNECTED
 Production adapter enrollment authority.... NOT CONNECTED
 Production durable trust stores............ NOT CONNECTED
-Live production IdP........................ NOT ENABLED
-Production asymmetric/HSM anchor trust...... PENDING
+Live production IdP........................ NOT CONNECTED
+Production asymmetric/HSM anchor trust..... NOT CONNECTED
 Production credentials..................... DENIED
 Production write providers................. DISABLED
-SQLite/reference stores.................... NOT PRODUCTION READY
 ```
 
-No checked-in switch, test double, reference store or capability claim can convert those blockers into production readiness.
+## Current certification state
 
-## PR state
+The active v0.9 branch inherits the merged v0.8 code. Until a v0.9 validator is introduced, the **415-test v0.8 suite remains the exact frozen regression gate**.
 
-```text
-PR #4............................. OPEN / DRAFT
-Do not merge without explicit user intent.
-```
+## Next exact engineering step
 
-## Next milestone
-
-After the documentation-synchronized head passes the same exact 415-test gate, start a **new feature branch** for production infrastructure adapters/deployment certification. v0.8 should remain a stable, frozen reference/runtime checkpoint rather than accumulating additional production integration code.
+Implement `PRODUCTION-INFRASTRUCTURE-v0.9.md` plus the provider-neutral adapter/evidence contract and adversarial contract tests. Do not select a concrete provider by assumption; provider-specific adapters must be separate implementations beneath the neutral contract.
