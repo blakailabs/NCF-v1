@@ -18,6 +18,7 @@ backend capability contract
 + narrow first-certification bootstrap authority
 + bootstrap-to-steady-state handoff
 + shared certification-plane state
++ independent adapter/deployment attestation
 ```
 
 ## Evidence-first rule
@@ -37,101 +38,101 @@ Certified controls include backend/cluster identity, topology epoch, quorum, syn
 
 ## First-certification bootstrap and handoff
 
-`kernel/ha_bootstrap_authority.py` solves first-certification circular trust with a narrowly bound external one-time permit. It may initialize only the deterministic bootstrap object and revalidates target backend capabilities before use.
-
-`kernel/ha_certification_handoff.py` verifies that bootstrap object, initializes exact shared certification-control state, activates the same evidence-bound certificate, rechecks expiry using backend-authoritative time, and permanently closes first-bootstrap authority.
+`kernel/ha_bootstrap_authority.py` solves first-certification circular trust with a narrowly bound external one-time permit. `kernel/ha_certification_handoff.py` verifies that bootstrap object, initializes exact shared certification-control state, activates the same evidence-bound certificate, rechecks expiry using backend-authoritative time, and permanently closes first-bootstrap authority.
 
 `kernel/ha_handoff_guard.py` denies all future first-bootstrap calls after closure. `HandoffCertifiedSharedPersistence` prevents an ACTIVE-before-CLOSED crash window from unlocking ordinary shared-state access.
 
 ## Shared certification plane
 
-`kernel/shared_certification_plane.py` is the provider-neutral reference state machine for globally visible certification authority.
+`kernel/shared_certification_plane.py` is the provider-neutral reference state machine for globally visible certification authority. Every non-idempotent transition is guarded by a current writer fence and committed through `fenced_compare_and_swap_with_event` using the expected shared-object version and expected ordered-journal version.
 
-### State model
+The plane provides cross-process visibility for active certification, invalidation, topology epoch and permanent bootstrap closure, while rejecting stale writer fences, cluster identity drift, topology rollback, same-epoch conflicting evidence and evidence-nonce replay.
 
-The shared object records:
+The reference shared-plane adapter remains non-production by itself.
 
-```text
-contract + backend identity
-cluster identity
-highest topology epoch
-active certification record
-handoff lineage
-bootstrap_closed
-seen evidence nonces and evidence digests
-last invalidation
-```
+## Certification-plane adapter attestation
 
-Deterministic paths:
+`kernel/certification_plane_attestation.py` adds the independent trust boundary for a concrete shared certification-plane deployment.
+
+### Deployment identity
+
+A deployment is digest-bound to:
 
 ```text
-state  /_cfhs/ha/certification/plane/<backend-digest>
-fence  /_cfhs/ha/certification/plane-fence/<backend-digest>
-stream ha-certification-plane:<backend-digest>
+deployment_id
+backend_id
+cluster_id
+adapter_name
+adapter_version
+adapter_implementation_digest
+backend_capabilities_digest
+topology_evidence_digest
+probe_evidence_digest
 ```
 
-### Transaction model
+The adapter implementation digest is treated as a release identity, not a self-asserted version label. The backend capabilities digest prevents an adapter from being attested against one semantic capability set and then executed against another.
 
-Every non-idempotent transition is guarded by a current writer fence and committed through the shared backend's `fenced_compare_and_swap_with_event` primitive:
+### Independent attestation
+
+Adapter attestation binds:
 
 ```text
-assert current fence
-+ expected shared-object version
-+ expected ordered-journal version
-→ atomically update plane state
-→ atomically append transition event
+attestation_id
+deployment_digest
+authority_id / authority_class
+key_id
+authority_generation
+attestation_nonce
+issued_at / expires_at
 ```
 
-A stale certifier cannot mutate after fence takeover. Competing same-epoch certifications cannot both become authoritative. Independent processes see the same active certification, invalidation and bootstrap closure state.
+`CertificationPlaneAdapterAttestationVerifier` is an external verifier boundary. A production verifier should validate asymmetric/HSM-backed release or supply-chain evidence outside the deployment being certified.
 
-### Lifecycle semantics
+The certifier verifies exact attestation/deployment digests, authority/key/generation bindings, verifier receipt presence, issuance/verification windows and expiration.
 
-Initial lineage:
+### Replay and authority rollback
+
+Attestation nonces cannot be reused for changed content. Adapter authority/key rotation requires a monotonic generation advance. Lower generations are rejected, and authority/key changes within the same generation are conflicts.
+
+A deployment lineage cannot silently change backend or cluster identity.
+
+### Durable reference trust ledger
+
+`kernel/certification_plane_attestation_store.py` persists accepted deployment identity, authority generation, key identity, attestation digest, verifier receipt and nonce history across restart.
+
+This SQLite trust ledger exists only to certify durability/replay semantics. It deliberately reports:
 
 ```text
-PREPARED
-→ certification ACTIVATED
-→ handoff CLOSED
-→ bootstrap_closed = true
+production_ready = false
+reason = sqlite_reference_trust_store_not_production_authority
 ```
 
-Steady-state recertification then allows a higher topology epoch to supersede the active certificate without reopening first-bootstrap authority.
+Therefore the repository still contains no production adapter trust authority.
 
-The plane rejects:
+### Production-readiness conjunction
+
+A certification-plane adapter readiness decision can become positive only when all of these agree:
 
 ```text
-cluster identity drift
-topology rollback
-same-epoch conflicting evidence
-evidence-nonce reuse for different evidence
-stale writer fences
-activation without prepared initial handoff
-closure without matching active certificate
-closure after certificate expiry
-steady-state use before bootstrap closure
+shared backend semantic capability contract
++ exact concrete deployment identity
++ trusted adapter name/release digest
++ exact backend capability digest
++ topology/probe evidence bindings
++ fresh independent adapter attestation
++ external verifier receipt
++ production-ready durable attestation trust store
 ```
 
-`require_active()` uses backend-authoritative time and fails closed on missing or expired certification.
-
-### Production-readiness boundary
-
-`SharedStateCertificationPlane` is intentionally marked `reference_adapter_only = True`.
-
-Even when its test backend advertises the full shared-state capability contract, `readiness()` remains false because the adapter lacks:
-
-```text
-production_certification_plane_adapter_attestation
-```
-
-This prevents reference semantics from being confused with a production deployment. A later production adapter must independently prove deployment-instance identity and adapter trust in addition to the already-certified shared-state semantics.
+The tests use a test-only trust-store double with `production_ready=True` solely to prove this conjunction. That double is not production infrastructure and does not change the production posture of the repository.
 
 ## Current certification
 
 ```text
-Run ID: 34077833585
-Implementation/validator commit: 287d28850469a082d30a80a3649af363e494cda5
-Ran 364 tests in 8.163s
-364 / 364 PASS
+Run ID: 34078192031
+Implementation/validator commit: 350e608859d3d96f841099ff5248652a68dd6ede
+Ran 376 tests in 9.559s
+376 / 376 PASS
 0 failures
 0 errors
 0 skipped
@@ -151,28 +152,29 @@ Exact surface:
  15  bootstrap-authority adversarial tests
  12  bootstrap-to-steady-state handoff tests
  12  shared certification-plane tests
+ 12  adapter-attestation tests
 ---
-364 targeted tests
+376 targeted tests
 ```
 
-Shared-plane adversarial surface:
+Adapter-attestation adversarial surface:
 
 ```text
-cross-process active-certificate visibility
-concurrent same-epoch activation conflict
-same-evidence idempotency
-higher-epoch supersession
-lower-epoch rollback rejection
-cluster identity conflict
-cross-process invalidation visibility
-backend-authoritative expiry visibility
-shared handoff closure visibility
-stale certifier fence rejection
-control-plane restart recovery
-reference adapter cannot claim production readiness
+missing adapter attestation
+stale adapter attestation
+wrong backend identity
+wrong cluster identity
+wrong adapter implementation digest
+tampered backend-capability binding
+attestation replay across deployment identities
+monotonic authority/key rotation
+older authority-generation rollback
+restart recovery of accepted identity/generation
+reference trust store remains non-production
+positive readiness requires semantics + verifier + production-grade trust store
 ```
 
-## What 364/364 does NOT certify
+## What 376/376 does NOT certify
 
 ```text
 Real distributed SQL/consensus backend............ NOT ENABLED
@@ -181,24 +183,24 @@ Actual chaos/partition controller.................. NOT CONNECTED
 Production external bootstrap authority............ NOT CONNECTED
 Production permit single-use control plane......... NOT CONNECTED
 Production shared certification-plane adapter...... NOT CONNECTED
-Production adapter attestation..................... NOT IMPLEMENTED
+Production adapter attestation authority........... NOT CONNECTED
+SQLite reference adapter trust ledger.............. NOT PRODUCTION READY
 Production credentials............................. DISABLED
 Production writes.................................. DISABLED
 ```
 
-## Next boundary — adapter attestation
+## Next boundary — runtime adapter enrollment
 
-A production certification plane must prove more than correct state-machine semantics. The next contract will bind a concrete deployment instance and adapter implementation to independent trust evidence:
+The attestation decision is currently evaluated at certification time. The next boundary must ensure runtime control-plane use cannot drift away from the deployment that was attested.
 
 ```text
-deployment-instance identity
-+ adapter implementation digest/version
-+ backend + cluster identity
-+ shared-state capabilities
-+ independent authority/key generation
-+ fresh attestation receipt
-+ replay/rollback protection
-→ production certification-plane adapter readiness
+verified adapter readiness
+→ durable enrollment bound to deployment + attestation + verifier receipt
+→ monotonic enrollment generation
+→ runtime re-derive current deployment identity
+→ check enrollment freshness/revocation on every guarded operation
+→ fail closed on adapter/backend/cluster/capability/topology/probe drift
+→ cross-process rotation and revocation visibility
 ```
 
 No production credentials, backend or provider writes are enabled by this work.
