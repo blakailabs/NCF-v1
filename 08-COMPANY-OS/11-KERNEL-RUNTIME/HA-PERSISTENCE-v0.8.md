@@ -17,6 +17,7 @@ backend capability contract
 + actively observed behavioral probes
 + trusted external attestation
 + time-bounded certification lifecycle
++ narrow first-certification bootstrap authority
 ```
 
 ## Evidence-first rule
@@ -28,7 +29,7 @@ Automation third.
 AI last.
 ```
 
-Universal distributed-systems properties are kept distinct from Company OS release policy. For example, minimum voting-member/failure-domain counts are release policy; read models are represented explicitly as quorum, leader-linearizable or serializable-transaction semantics.
+Universal distributed-systems properties are kept distinct from Company OS release policy. Minimum voting-member/failure-domain counts are release policy; read models are explicitly represented as quorum, leader-linearizable or serializable-transaction semantics.
 
 ## HA production-readiness contract
 
@@ -70,17 +71,13 @@ stale_owner_rejected_after_takeover
 network_partition_single_writer
 ```
 
-Ordinary probes exercise client operations directly. Fault probes require a separate `HAChaosController` so the storage client cannot self-assert that a partition or quorum loss occurred.
-
-No chaos controller means the relevant probes are BLOCKED, no positive probe evidence is emitted, and production certification remains incomplete.
-
-Per-probe exceptions are preserved as negative evidence instead of aborting the complete run.
+Fault probes require a separate `HAChaosController`. Missing chaos control produces BLOCKED evidence rather than a false pass.
 
 ## Digest-bound topology + probe evidence
 
-`kernel/ha_evidence_pipeline.py` introduces `HATopologySnapshot` and `HAEvidenceAssembler`.
+`kernel/ha_evidence_pipeline.py` combines an independently sourced `HATopologySnapshot` with the active probe report.
 
-A topology snapshot includes the operational HA fields plus source provenance:
+Topology source provenance includes:
 
 ```text
 source_id
@@ -96,40 +93,123 @@ cluster_consensus
 independent_observer
 ```
 
-The assembler requires:
+The final evidence nonce is derived from topology, topology-source receipt and probe-report digests. Callers cannot choose a nonce that disconnects certification from observed source material.
+
+## First-certification bootstrap authority
+
+`kernel/ha_bootstrap_authority.py` addresses the circular trust problem: the first shared HA certificate cannot require an already-active shared certificate simply to initialize its own control state.
+
+The solution is a narrow external permit—not a generic bypass.
+
+### Permit binding
 
 ```text
-topology backend_id == probe report backend_id
-valid topology source receipt digest
-known/unique probe identities
-bounded topology/probe observation skew
-blocked/failed/missing probe propagation
+purpose = initialize_ha_certification_state_v08
+backend_id
+cluster_id
+topology_epoch
+evidence_digest
+certification_decision_digest
+attestation_digest
+authority_id
+authority_class
+issued_at
+expires_at
+permit_nonce
 ```
 
-The final `HADeploymentEvidence.evidence_nonce` is derived from:
+Accepted reference authority classes:
 
 ```text
-SHA256(
-  topology_digest
-  + topology_source_receipt_digest
-  + probe_report_digest
-)
+external_certification_authority
+independent_release_authority
 ```
 
-Callers cannot choose a nonce that disconnects certification from the observed source material.
+A production verifier is expected to validate the permit outside the uncertified backend using asymmetric/HSM/mTLS-backed trust or an equivalent independently controlled mechanism.
 
-A blocked probe is omitted from positive `HAProbeEvidence` and recorded as an assembly blocker. A failed probe remains explicit negative evidence and causes the certifier to deny production readiness.
+### Narrow raw backend surface
+
+Before first certification, the coordinator receives only:
+
+```text
+capabilities()
+read()
+put_if_absent()
+```
+
+It does not expose generic CAS, fencing, journal mutation or caller-selected application writes.
+
+The only allowed destination is internally derived:
+
+```text
+/_cfhs/ha/certification/bootstrap/<backend-digest>
+```
+
+### Backend substitution defense
+
+The coordinator does not accept `backend_id` equality as sufficient proof. Before the bootstrap exception is used, the target backend must still satisfy the full production shared-state capability contract.
+
+Thus a weaker backend cannot impersonate the certified target simply by reusing the same identifier.
+
+This does not yet replace the need for a stronger production deployment-instance identity/attestation mechanism; it closes the direct capability-downgrade substitution path in the reference boundary.
+
+### One-time and crash-safe permit semantics
+
+The permit-use ledger reserves the exact permit/binding before the raw backend write.
+
+```text
+verify external permit
+→ reserve one-time permit
+→ derive reserved object key/state
+→ put-if-absent
+→ read-after-write verify exact state
+→ consume permit
+```
+
+If the process crashes after the backend write but before permit consumption, retry reuses the existing RESERVED permit and exact backend object. It does not issue a second bootstrap write.
+
+A consumed permit replay is idempotent only for the same permit and exact initialized state. Reusing the same permit ID with changed content is rejected as an idempotency conflict.
+
+The SQLite permit ledger is a reference implementation of these semantics only. Production one-time enforcement must live in an independent certification authority/control plane or equivalently strong service.
+
+## Bootstrap adversarial surface
+
+Certified attacks include:
+
+```text
+one-time initialization
+consumed-permit replay
+expired permit
+wrong purpose
+wrong backend
+wrong cluster
+wrong topology epoch
+wrong evidence digest
+verifier authority mismatch
+verifier binding mismatch
+same permit ID + altered content
+crash after backend write / before consume
+conflicting preexisting bootstrap state
+non-production-ready certification
+same backend ID + weaker capability contract
+```
+
+Two pre-certification source findings were repaired rather than weakening tests:
+
+1. bootstrap replay/recovery now explicitly distinguishes whether permit state existed before the current attempt;
+2. the target backend capability contract is revalidated at bootstrap time.
 
 ## Current certification
 
 ```text
-Run ID: 34056548949
-Commit: c1b92423093ac1266b14e25e7624a702fdc4c7ff
-Ran 325 tests in 21.091s
-325 / 325 PASS
+Run ID: 34074237722
+Implementation commit: e0a4acca56a954d64a9f1229d4f1173ff34435c8
+Ran 340 tests in 8.031s
+340 / 340 PASS
 0 failures
 0 errors
 0 skipped
+compile_ok = true
 exact_test_count = true
 successful = true
 ```
@@ -142,42 +222,40 @@ Exact surface:
  15  HA certification lifecycle/runtime guard tests
  14  active conformance probe-harness tests
  11  digest-bound evidence-pipeline tests
+ 15  bootstrap-authority adversarial tests
 ---
-325 targeted tests
+340 targeted tests
 ```
 
-## What 325/325 does NOT certify
+## What 340/340 does NOT certify
 
 ```text
 A real distributed SQL/consensus backend.......... NOT ENABLED
 Actual provider topology source.................... NOT CONNECTED
 Actual chaos/partition controller.................. NOT CONNECTED
+Production external bootstrap authority............ NOT CONNECTED
+Production permit single-use control plane......... NOT CONNECTED
 Production shared certification control plane...... NOT IMPLEMENTED
 Production credentials............................. DISABLED
 Production writes.................................. DISABLED
 ```
 
-Reference tests prove the contracts and rejection behavior; they do not upgrade SQLite or any simulated target to production HA.
+Reference tests prove contracts, recovery semantics and rejection behavior; they do not upgrade SQLite or a simulated authority to production infrastructure.
 
-## Next boundary — bootstrap trust without circularity
+## Next boundary — bootstrap to steady state
 
-Production certification state ultimately must live in a shared control plane, but the first certification cannot require an already-active certification merely to initialize itself.
+The next v0.8 boundary is the handoff from narrowly bootstrapped control state into normal certified shared persistence.
 
-The next design therefore uses a **narrow external bootstrap permit**, not a general bypass.
-
-The permit must be:
+Required shape:
 
 ```text
-short lived
-one time
-independently verified
-bound to exact backend_id
-bound to exact cluster_id
-bound to exact topology_epoch
-bound to exact evidence_digest
-bound to exact certification_digest
-bound to a single bootstrap purpose
-replay protected
+externally authorized bootstrap object
+→ verify exact bootstrap binding and authority receipt
+→ initialize durable shared certification-control record
+→ activate same evidence-bound certificate
+→ mark bootstrap authority CLOSED/CONSUMED
+→ reject any future first-bootstrap attempt
+→ require normal CertifiedSharedPersistence for subsequent control/runtime state
 ```
 
-It may authorize only initialization of the reserved HA-certification control state. It must never authorize arbitrary application/kernel writes.
+The handoff must be idempotent, topology-rollback resistant, crash-safe and fail closed if bootstrap state, active certification state or evidence bindings disagree.
