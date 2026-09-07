@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 import sqlite3
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from .ha_persistence import HADeploymentEvidence, HAPersistenceCertification
 from .hardening import HardeningError
-from .shared_state_backend import SharedBackendCapabilities, SharedObject
+from .shared_state_backend import SharedBackendCapabilities, SharedObject, certify_backend
 from .trust import sha256_hex
 
 
@@ -366,7 +365,7 @@ class HACertificationBootstrapCoordinator:
         if not verified.authority_receipt_digest:
             raise HardeningError("CFHS_HA_BOOTSTRAP_DENIED", "Verified bootstrap authority receipt digest is missing")
         verified_at = _parse_time(verified.verified_at, "bootstrap permit verification")
-        if issued - verified_at > __import__("datetime").timedelta(seconds=self.max_issue_future_skew_seconds):
+        if issued - verified_at > timedelta(seconds=self.max_issue_future_skew_seconds):
             raise HardeningError("CFHS_HA_BOOTSTRAP_DENIED", "Bootstrap permit issuance is unreasonably in the future")
         if verified_at >= expires:
             raise HardeningError("CFHS_HA_BOOTSTRAP_EXPIRED", "Bootstrap permit is expired")
@@ -379,13 +378,24 @@ class HACertificationBootstrapCoordinator:
         permit: HABootstrapPermit,
     ) -> HABootstrapResult:
         binding = HABootstrapBinding.from_certification(certification, evidence)
-        backend_id = self.backend.capabilities().backend_id
-        if backend_id != binding.backend_id:
+        capabilities = self.backend.capabilities()
+        if capabilities.backend_id != binding.backend_id:
             raise HardeningError("CFHS_HA_BOOTSTRAP_DENIED", "Bootstrap target backend identity mismatch")
+        capability_result = certify_backend(capabilities)
+        if not capability_result.production_ready:
+            raise HardeningError(
+                "CFHS_HA_BOOTSTRAP_DENIED",
+                "Bootstrap target backend does not satisfy the production shared-state capability contract",
+                {
+                    "backend_id": capabilities.backend_id,
+                    "missing_requirements": list(capability_result.missing_requirements),
+                },
+            )
         verified = self._verify_permit(permit, binding)
         verified_at = _parse_time(verified.verified_at, "bootstrap permit verification")
 
-        prior_use = self.permit_ledger.reserve(
+        use_before_attempt = self.permit_ledger.get(permit.permit_id)
+        self.permit_ledger.reserve(
             permit,
             binding,
             verified_at=verified_at,
@@ -424,7 +434,7 @@ class HACertificationBootstrapCoordinator:
         if observed is None or observed.value_digest != state_digest or observed.value != bootstrap_state:
             raise HardeningError("CFHS_HA_BOOTSTRAP_DENIED", "HA bootstrap state failed read-after-write verification")
 
-        consumed = self.permit_ledger.consume(
+        self.permit_ledger.consume(
             permit.permit_id,
             object_key=object_key,
             bootstrap_state_digest=state_digest,
@@ -436,5 +446,5 @@ class HACertificationBootstrapCoordinator:
             bootstrap_state_digest=state_digest,
             permit_digest=permit.digest(),
             authority_receipt_digest=verified.authority_receipt_digest,
-            idempotent_replay=prior_use["state"] == "CONSUMED" or consumed["reserved_at"] != consumed["consumed_at"],
+            idempotent_replay=use_before_attempt is not None,
         )
