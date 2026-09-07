@@ -1,6 +1,6 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-07 02:58 UTC  
+**Updated:** 2026-09-07 03:04 UTC  
 **Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
 **Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
 
@@ -41,51 +41,57 @@ trusted deployment attestation
 time-bounded certification lifecycle
 backend-authoritative expiry
 topology rollback + cluster continuity + evidence replay protection
-narrow external first-certification bootstrap authority
-bootstrap-to-steady-state certification handoff
+first-certification bootstrap authority
+bootstrap-to-steady-state handoff
 permanent first-bootstrap closure
 closure-aware certified shared persistence
-provider-neutral shared certification-plane state machine
+shared certification-plane state machine
+certification-plane adapter attestation contract
 ```
 
-## Shared certification plane — CERTIFIED REFERENCE CONTRACT
+## Adapter attestation — CERTIFIED REFERENCE CONTRACT
 
-`kernel/shared_certification_plane.py` moves certification and handoff authority out of process-local lifecycle tables and models it as shared state over the existing HA storage primitives:
+`kernel/certification_plane_attestation.py` prevents correct reference semantics from being confused with a trusted production adapter deployment.
+
+A concrete deployment identity binds:
 
 ```text
-shared object state
-+ monotonic writer fence
-+ CAS version
-+ ordered journal version
-+ backend-authoritative time
+deployment_id
+backend_id
+cluster_id
+adapter name/version
+adapter implementation digest
+backend capability digest
+topology evidence digest
+probe evidence digest
 ```
 
-The deterministic plane state records:
+Independent adapter attestation additionally binds:
 
 ```text
-backend identity
-cluster identity
-highest topology epoch
-active certification
-PREPARED / ACTIVATED / CLOSED handoff lineage
-permanent bootstrap_closed state
-seen evidence nonce → evidence digest bindings
-latest invalidation provenance
+attestation id + nonce
+deployment digest
+authority id/class
+key id
+authority generation
+issued_at / expires_at
 ```
 
-Mutations use `fenced_compare_and_swap_with_event`, binding each state change to a current fence plus object and journal versions. Cross-process readers observe the same active certificate, invalidation and bootstrap-closure state.
+The certifier requires the underlying shared-backend capability contract, exact deployment identity, a trusted adapter release digest, capability/evidence digests, freshness/expiry, an independent verifier receipt, and a production-ready durable attestation trust store.
 
-The plane rejects cluster identity changes, topology rollback, same-epoch conflicting evidence, evidence-nonce replay, stale certifier fences and certificate expiry. Higher topology epochs can supersede the prior certificate after the first-bootstrap lineage is CLOSED.
+Authority/key rotation is monotonic. Older generations are rejected. Reused nonces with changed contents are rejected. A deployment cannot silently change backend or cluster identity under the same trust lineage.
 
-The current `SharedStateCertificationPlane` is deliberately a **reference adapter**. Its readiness result always includes `production_certification_plane_adapter_attestation`; therefore it cannot self-promote to production readiness merely because a test backend advertises all storage capabilities.
+`kernel/certification_plane_attestation_store.py` provides a restart-safe SQLite **reference** ledger for replay/rollback semantics. It deliberately reports `production_ready=False`; SQLite is not a production external release authority or distributed trust service.
+
+The test suite contains a test-only trust-store double that reports ready solely to prove the certifier's positive contract path. It is not shipped or claimed as production infrastructure.
 
 ## Current certified checkpoint
 
 ```text
-Run ID: 34077833585
-Implementation/validator commit: 287d28850469a082d30a80a3649af363e494cda5
-Ran 364 tests in 8.163s
-364 / 364 PASS
+Run ID: 34078192031
+Implementation/validator commit: 350e608859d3d96f841099ff5248652a68dd6ede
+Ran 376 tests in 9.559s
+376 / 376 PASS
 0 failures
 0 errors
 0 skipped
@@ -105,11 +111,10 @@ Exact certified surface:
  15  adversarial HA bootstrap-authority tests
  12  bootstrap-to-steady-state handoff tests
  12  shared certification-plane tests
+ 12  adapter-attestation tests
 ---
-364 targeted tests
+376 targeted tests
 ```
-
-Shared-plane tests cover cross-process visibility, concurrent activation conflict, same-evidence idempotency, higher-epoch supersession, rollback rejection, cluster conflict, invalidation visibility, expiry visibility, handoff closure visibility, stale-fence rejection, restart recovery and explicit non-production readiness of the reference adapter.
 
 ## PR state
 
@@ -128,29 +133,29 @@ SQLite reference backend................... NOT PRODUCTION READY
 Production bootstrap permit authority...... NOT CONNECTED
 Production bootstrap one-time ledger....... NOT CONNECTED
 Production shared certification plane...... NOT CONNECTED
-Production certification-plane attestation. NOT IMPLEMENTED
+Production adapter attestation authority... NOT CONNECTED
+SQLite reference adapter trust ledger...... NOT PRODUCTION READY
 Production credentials..................... DENIED
 Production write providers................. DISABLED
 Live production IdP........................ NOT ENABLED
 Production asymmetric/HSM anchor trust...... PENDING
 ```
 
-The 364/364 checkpoint certifies reference semantics and adversarial rejection behavior; it does not certify a real distributed database or production control plane.
+The 376/376 checkpoint certifies reference contracts and adversarial rejection behavior; it does not certify a real distributed database, production release authority or production control plane.
 
 ## Next exact engineering step
 
-Build the **production certification-plane adapter attestation contract**:
+Build **durable adapter enrollment + runtime revalidation**:
 
 ```text
-shared-plane reference semantics
-→ deployment-instance identity
-→ independent adapter attestation
-→ backend/cluster/implementation binding
-→ capability and evidence binding
-→ freshness/expiry
-→ monotonic authority/key generation
-→ replay/rollback protection
-→ fail-closed production-ready decision
+verified adapter readiness
+→ durable enrollment record
+→ deployment + attestation + verifier receipt binding
+→ monotonic enrollment generation
+→ runtime guard re-derives current deployment identity
+→ expiry/revocation checked on every certification-plane use
+→ adapter/backend/cluster/capability/evidence drift fails closed
+→ cross-process rotation/revocation visibility
 ```
 
 Do not enable a production backend, credentials or write provider while implementing this boundary.
