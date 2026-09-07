@@ -1,14 +1,14 @@
 # Company Operating System Runtime Status
 
 **Engineering branch:** `feature/company-kernel-production-infrastructure-v0.9`  
-**Milestone:** Company Kernel Production Infrastructure v0.9
+**Active PR:** #5 — OPEN / DRAFT  
+**Milestone:** Company Kernel Production Infrastructure v0.9  
+**Provider sequence:** Spanner → YugabyteDB → production identity/authorities/HSM → deployment automation
 
 ## Project identity
 
 **Project:** Company Operating System  
 **Repository:** `blakailabs/NCF-v1`
-
-NCF remains the constitutional governance layer inside the broader Company Operating System.
 
 ## State-sync discipline
 
@@ -20,7 +20,6 @@ NCF remains the constitutional governance layer inside the broader Company Opera
 v0.8 PR #4........................ MERGED
 v0.8 merge commit................. eb47c7cfa9ab223f8e60847e651f2387edff0b08
 v0.8 final synchronized-head CI.... 34083972113
-v0.8 certified head................ ef1f8b24bc20a34762f026bb802dfd35b4d2ef4e
 415 / 415 PASS
 ```
 
@@ -33,57 +32,69 @@ Automation third.
 AI last.
 ```
 
-## v0.9 provider-neutral production contract — CERTIFIED
+## Provider-neutral production infrastructure contract
 
-`kernel/production_infrastructure_v09.py` defines the first production-infrastructure certification boundary. It does not connect or impersonate a provider. It defines the evidence a real provider adapter must produce before the kernel can treat it as production-ready.
+`kernel/production_infrastructure_v09.py` remains the provider-neutral certification boundary. It requires exact deployment identity, required HA capabilities/evidence phases, external verification, independent trust provenance, fresh evidence, approved external credential-source classes and no provider self-certification.
 
-### Evidence identity
+## Spanner v0.9.1 contract — CERTIFIED
 
-The bundle binds:
+`kernel/spanner_backend_v091.py` is the first concrete provider contract beneath v0.9.
+
+### Bound deployment identity
 
 ```text
-deployment_id
-provider_id
-adapter name/version/implementation digest
-backend_id
-cluster_id
-capability digest
-topology evidence digest
-probe evidence digest
-release attestation digest
-trust-store identity
-authority identity/class/generation
+provider = google-cloud-spanner
+project_id
+instance_id
+database_id
+instance_config
+database_dialect
+adapter_version
+schema digest
 credential source class
-observed_at / valid_until
-evidence nonce
-required capability claims
-required certification phases
 ```
 
-### Certified rejection rules
+### Schema contract
 
 ```text
-missing external verifier → deny
-provider self-certification → deny
-verifier not independent → deny
-verifier digest mismatch → deny
-missing required HA capability → deny
-missing fault/partition evidence phase → deny
-stale/expired evidence → deny
-invalid credential source class → deny
-secret-like material in evidence metadata → deny
-non-positive authority generation → deny
+cfhs_shared_objects
+cfhs_shared_fences
+cfhs_shared_journal
 ```
 
-The positive contract path requires an independent verifier receipt and production trust-store provenance.
+GoogleSQL uses commit-timestamp-enabled TIMESTAMP columns. PostgreSQL dialect has a separate schema identity and is never silently substituted for GoogleSQL.
 
-## Current certified checkpoint
+### Required runtime semantics
 
 ```text
-Run ID: 34084379611
-Implementation/validator head: b8683d5a8c4a407cd7437d7736db50771dc9bf1c
-Ran 427 tests in 6.709s
-427 / 427 PASS
+strong reads
+read-write serializable/external-consistency transactions
+exact object version CAS
+monotonic persistent fence tokens
+ordered journal versions
+single transaction for fence assertion + object CAS + journal append
+commit timestamp as authoritative transaction-order evidence
+production service only for durability/topology certification
+```
+
+### Credential and emulator controls
+
+```text
+embedded credentials........................ DENIED
+credential reference must be secret://....... REQUIRED for live integration
+workload/managed/external/HSM identity........ ALLOWED CLASSES
+Spanner emulator production certification.... PERMANENTLY DENIED
+live reads.................................... DISABLED BY DEFAULT
+live writes................................... DISABLED BY DEFAULT
+```
+
+## Current exact certification
+
+```text
+Run ID: 34086008840
+Implementation/validator head: e3ee98bca57d2f4c69bbc5c750fecb68e321d55f
+Ran 441 tests in 10.607s
+441 / 441 PASS
 0 failures
 0 errors
 0 skipped
@@ -96,34 +107,53 @@ Exact surface:
 
 ```text
 415 frozen v0.8 tests
- 12 production-infrastructure v0.9 tests
+ 12 neutral production infrastructure tests
+ 14 Spanner adapter contract tests
 ---
-427 targeted tests
+441 targeted tests
+```
+
+## What 441 does and does not mean
+
+**Certified:** kernel ↔ Spanner contract, schema identity, credential rules, emulator exclusion, evidence generation rules, and neutral-certifier compatibility.
+
+**Not certified:** any actual GCP project, Spanner instance/database, workload identity, IAM policy, live transaction behavior, topology, durability under failure, or external attestation.
+
+## Live Spanner certification boundary
+
+A real deployment must supply observed evidence for:
+
+```text
+S1 exact project/instance/database identity
+S2 installed schema identity
+S3 multi-client visibility
+S4 serializability/external consistency
+S5 stale CAS rejection
+S6 monotonic fencing + takeover
+S7 ordered journal
+S8 atomic fenced CAS + journal
+S9 commit timestamp ordering
+S10 restart/durability evidence
+S11 topology/instance-configuration evidence
+S12 independently controlled fault/quorum evidence or explicit BLOCKED state
+S13 external release/deployment attestation
+S14 neutral v0.9 certification
 ```
 
 ## Production posture
 
 ```text
-Real production HA backend................ NOT CONNECTED
-Real topology control-plane adapter........ NOT CONNECTED
-Real chaos/partition environment........... NOT CONNECTED
-Production bootstrap authority............. NOT CONNECTED
-Production shared certification plane...... NOT DEPLOYED
-Production adapter attestation authority... NOT CONNECTED
-Production adapter enrollment authority.... NOT CONNECTED
-Production durable trust stores............ NOT CONNECTED
-Live production IdP........................ NOT CONNECTED
-Production asymmetric/HSM anchor trust..... NOT CONNECTED
-Production credentials..................... DENIED
-Production write providers................. DISABLED
+Real Spanner deployment...................... NOT CONNECTED
+Spanner credentials.......................... DENIED
+Spanner live reads/writes.................... DISABLED
+Independent Spanner topology evidence........ NOT CONNECTED
+Independent fault controller................. NOT CONNECTED
+External verifier/trust store................ NOT CONNECTED
+YugabyteDB portability certification......... WAITING ON SPANNER
+Production IdP/authorities/HSM................ WAITING
+Deployment automation........................ WAITING
 ```
 
-## Boundary between completed and blocked work
+## Next exact engineering action
 
-The **provider-neutral contract** can be and now is implemented/certified in-repository.
-
-A **concrete provider adapter** cannot be truthfully completed until an actual deployment target is selected because provider APIs, topology semantics, transaction guarantees, identity plumbing, fault controls and trust mechanisms are deployment-specific evidence sources.
-
-## Next exact engineering step
-
-Select the first real shared-state deployment target, then implement its adapter beneath the v0.9 neutral contract. Do not alter the contract to make a weak provider pass; the provider must satisfy the contract or remain non-production.
+Connect the first real Spanner deployment target. Until the project/instance/database and approved external credential path exist, any claim of live Spanner certification would be fabricated. Once connected, run the live evidence phases in order and either certify Spanner or preserve the failing/blocked evidence before moving to YugabyteDB.
