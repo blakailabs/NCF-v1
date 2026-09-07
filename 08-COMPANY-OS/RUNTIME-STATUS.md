@@ -1,6 +1,6 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-07 01:47 UTC  
+**Updated:** 2026-09-07 01:51 UTC  
 **Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
 **Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
 
@@ -14,21 +14,23 @@ NCF remains the constitutional governance layer inside the broader Company Opera
 
 ## State-sync discipline
 
-This file is the canonical resumability checkpoint for active Company OS engineering.
+This file is the canonical detailed resumability checkpoint for active Company OS engineering.
 
 Update it after each meaningful implementation or certification boundary with:
 
 ```text
-branch/head commit
-last certified test count/run
+branch / current engineering milestone
+last certified implementation commit and CI run
+exact test count
 new committed-but-uncertified work
-open risks/findings
-production posture
+open findings and production blockers
+PR/review state
 next exact engineering step
-PR state
 ```
 
 A committed change is never described as certified until its exact-count CI run passes.
+
+For fast pickup, also keep `08-COMPANY-OS/CURRENT-STATE.md` synchronized as the concise checkpoint.
 
 ## Merged baseline
 
@@ -53,7 +55,7 @@ Company OS distinguishes formal standards, authoritative implementation evidence
 
 ## v0.8 — HA Persistence Safety
 
-Production HA readiness requires:
+Production HA readiness currently requires:
 
 ```text
 backend capability contract
@@ -61,11 +63,12 @@ backend capability contract
 + observed behavioral probes
 + independent trusted attestation
 + time-bounded certification lifecycle
++ narrow first-certification bootstrap authority
 ```
 
-### Certified HA evidence stack
+## Certified HA evidence and lifecycle stack
 
-The currently certified v0.8 stack includes:
+The certified v0.8 stack now includes:
 
 ```text
 HA deployment-readiness contract
@@ -78,18 +81,81 @@ topology rollback protection
 cluster identity continuity
 evidence nonce replay protection
 shared-state access gated by active certification
+one-purpose external bootstrap permit contract
+one-time bootstrap replay protection
+crash-safe bootstrap recovery
+bootstrap backend capability revalidation
 ```
 
-### Last certified checkpoint
+## Bootstrap trust boundary — CERTIFIED REFERENCE CONTRACT
+
+`kernel/ha_bootstrap_authority.py` solves first-certification circular trust without creating a generic uncertified-backend bypass.
+
+A bootstrap permit is bound to:
 
 ```text
-Run ID: 34056548949
-Commit: c1b92423093ac1266b14e25e7624a702fdc4c7ff
-Ran 325 tests in 21.091s
-325 / 325 PASS
+purpose = initialize_ha_certification_state_v08
+backend_id
+cluster_id
+topology_epoch
+evidence_digest
+certification decision digest
+attestation digest
+authority identity/class
+issued_at / expires_at
+permit nonce
+```
+
+The coordinator exposes no caller-selected object key and may initialize only the internally derived reserved object:
+
+```text
+/_cfhs/ha/certification/bootstrap/<backend-digest>
+```
+
+Before use it revalidates that the target backend still satisfies the full production shared-state capability contract. A weaker backend cannot substitute itself merely by reusing the certified `backend_id`.
+
+The reference permit-use ledger reserves the permit before the raw bootstrap write. If the process crashes after the backend write but before permit consumption, retry recognizes the existing reservation/state and completes without a second write.
+
+The SQLite permit-use ledger remains a reference lifecycle implementation; production one-time enforcement must live in an independent certification authority/control plane or equivalently strong service.
+
+## Adversarial bootstrap certification
+
+The certified bootstrap suite covers:
+
+```text
+valid one-time initialization
+same consumed permit replay is idempotent
+permit expiry
+incorrect purpose
+incorrect backend
+incorrect cluster
+incorrect topology epoch
+incorrect evidence digest
+authority-verifier identity mismatch
+authority-verifier binding mismatch
+same permit ID reused with altered content
+crash after backend write before permit consumption
+conflicting preexisting bootstrap state
+non-production-ready certification
+same backend_id with weaker backend capabilities
+```
+
+Two source-review findings were repaired before certification:
+
+1. replay/recovery classification now explicitly checks whether the permit existed before the current attempt;
+2. the bootstrap target's production capability contract is revalidated before the exception is used.
+
+## Current certified checkpoint
+
+```text
+Run ID: 34074237722
+Implementation commit: e0a4acca56a954d64a9f1229d4f1173ff34435c8
+Ran 340 tests in 8.031s
+340 / 340 PASS
 0 failures
 0 errors
 0 skipped
+compile_ok = true
 exact_test_count = true
 successful = true
 ```
@@ -102,74 +168,10 @@ Exact certified surface:
  15  HA certification lifecycle/runtime tests
  14  active HA probe-harness tests
  11  digest-bound HA evidence-pipeline tests
+ 15  adversarial HA bootstrap-authority tests
 ---
-325 targeted tests
+340 targeted tests
 ```
-
-## Current committed but NOT YET certified work
-
-Current branch head:
-
-```text
-255960f75703c5a2abf32edd11a7d6aaec43946c
-```
-
-New bootstrap boundary:
-
-```text
-kernel/ha_bootstrap_authority.py
-tests/test_ha_bootstrap_authority_v08.py
-```
-
-Purpose: solve first-certification circular trust with a narrowly scoped external bootstrap permit rather than a generic uncertified-backend bypass.
-
-The permit is bound to:
-
-```text
-single bootstrap purpose
-backend_id
-cluster_id
-topology_epoch
-evidence_digest
-certification decision digest
-attestation digest
-authority identity/class
-issue/expiry time
-permit nonce
-```
-
-The coordinator derives the reserved bootstrap object key internally and exposes no caller-selected generic write destination.
-
-### Adversarial bootstrap suite now committed
-
-Tests cover:
-
-```text
-valid one-time initialization
-same-permit idempotent replay
-permit expiry
-incorrect purpose
-incorrect backend
-incorrect cluster
-incorrect topology epoch
-incorrect evidence digest
-authority-verifier identity mismatch
-authority-verifier binding mismatch
-same permit ID with altered content
-crash after backend write before permit consumption
-conflicting preexisting bootstrap state
-non-production-ready certification
-backend substitution using same backend_id but weaker capabilities
-```
-
-### Open findings being repaired before certification
-
-Source review identified two issues before the bootstrap suite enters the exact-count validator:
-
-1. **Replay/recovery classification:** bootstrap must explicitly distinguish a permit that existed before the current attempt from a newly reserved permit so first execution, consumed replay and crash recovery report correctly.
-2. **Backend substitution:** matching `backend_id` is not sufficient. The raw bootstrap target must itself still satisfy the production capability contract; a weaker backend cannot impersonate a certified deployment merely by reusing the same identifier.
-
-These findings are being fixed; **325/325 remains the authoritative certified count until the bootstrap suite passes CI.**
 
 ## PR state
 
@@ -184,21 +186,35 @@ requested reviewers awaiting us... NONE
 
 No unresolved external PR feedback currently blocks engineering.
 
-## Explicit non-claims
+## Explicit non-claims / production blockers
 
 ```text
-Real production HA backend.............. NOT ENABLED
-Real topology control-plane adapter...... NOT ENABLED
-Real chaos/partition environment......... NOT ENABLED
-SQLite reference backend................ NOT PRODUCTION READY
-Production bootstrap authority.......... REFERENCE CONTRACT ONLY
-Production certification control plane.. REFERENCE ONLY
-Production credentials.................. DENIED
-Production write providers.............. DISABLED
-Live production IdP..................... NOT ENABLED
-Production asymmetric/HSM anchor trust.. PENDING
+Real production HA backend............... NOT ENABLED
+Real topology control-plane adapter....... NOT ENABLED
+Real chaos/partition environment.......... NOT ENABLED
+SQLite reference backend................. NOT PRODUCTION READY
+Production bootstrap permit authority..... NOT CONNECTED
+Production bootstrap one-time ledger...... NOT CONNECTED
+Production shared certification plane..... NOT IMPLEMENTED
+Production credentials................... DENIED
+Production write providers............... DISABLED
+Live production IdP...................... NOT ENABLED
+Production asymmetric/HSM anchor trust.... PENDING
 ```
 
-## Next exact step
+The 340/340 checkpoint certifies reference contracts, safety decisions, recovery behavior and adversarial rejection logic. It does not certify a real distributed database, real certification authority, or real fault-control environment.
 
-Repair the two bootstrap findings, add the bootstrap adversarial module to `scripts/validate_v08.py`, calculate the new exact test count, run CI, repair any surfaced failures, and only then promote the bootstrap boundary into the certified v0.8 state and PR #4 description.
+## Next exact engineering step
+
+Build the **bootstrap-to-steady-state certification handoff**:
+
+```text
+externally authorized bootstrap object
+→ verify exact bootstrapped certification binding
+→ initialize durable shared HA certification-control state
+→ activate the same evidence-bound certificate
+→ close/revoke bootstrap initialization authority
+→ require normal CertifiedSharedPersistence thereafter
+```
+
+The handoff must be idempotent, rollback-resistant, topology-epoch aware, crash-safe, and must not leave bootstrap authority reusable after steady-state activation.
