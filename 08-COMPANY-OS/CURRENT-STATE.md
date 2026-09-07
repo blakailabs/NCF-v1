@@ -15,8 +15,8 @@ Milestone: Company Kernel HA Persistence Safety v0.8
 ## Last certified checkpoint
 
 ```text
-CI run: 34077423653
-Certified branch-head commit: 79d9bfc9dd61ccb05f98a61a421dc996d6c13ef8
+CI run: 34077554747
+Certified synchronized head: 9e576b747f917d29bc36a5e51f15325648c8f407
 352 / 352 PASS
 0 failures
 0 errors
@@ -26,9 +26,38 @@ exact_test_count = true
 successful = true
 ```
 
-The handoff validator/code checkpoint was `5fe41db3c519aafe583dd3d858c9d0755a9481c7`. Documentation-sync commits may follow; always verify the latest branch-head CI before merge.
+## Current candidate — NOT YET CERTIFIED
 
-## What is certified in v0.8
+```text
+Shared certification-plane implementation: 65cf3917bb56cb3cf36708ec85b0abb328290cd2
+Adversarial test commit: 05a8ae1f2d09dbcf314df8391fa73b54d108b535
+364-test validator commit: 287d28850469a082d30a80a3649af363e494cda5
+Expected exact count: 364
+Status: awaiting exact-count CI certification
+```
+
+Candidate adds a provider-neutral shared certification-plane reference contract using the existing shared backend's fenced CAS + ordered journal primitives. It keeps the adapter explicitly reference-only and therefore unable to self-certify as production-ready.
+
+Candidate test surface:
+
+```text
+cross-process active-certificate visibility
+concurrent activation conflict
+same-evidence idempotency
+higher-epoch supersession
+lower-epoch rollback rejection
+cluster identity conflict
+invalidation visibility
+certificate expiry visibility
+shared handoff closure visibility
+stale certifier fence rejection
+control-plane restart recovery
+reference/local-only adapter cannot claim production readiness
+```
+
+**Do not call the shared certification plane certified until GitHub Actions confirms 364/364 with 0 failures/errors/skips.**
+
+## What is already certified in v0.8
 
 ```text
 HA deployment-readiness contract
@@ -54,23 +83,6 @@ concurrent handoff convergence
 activation-expiry recheck before closure
 ```
 
-## Certified handoff adversarial tests
-
-```text
-successful handoff
-idempotent repeated handoff
-crash before shared activation
-crash after shared activation before bootstrap closure
-bootstrap object tampering
-certificate/evidence mismatch
-cluster mismatch
-topology rollback
-second first-bootstrap attempt after closure
-concurrent handoff attempts
-activation expiry during handoff
-steady-state access denied until handoff fully complete
-```
-
 ## PR state
 
 ```text
@@ -90,37 +102,18 @@ Real chaos controller.................... NOT CONNECTED
 Production bootstrap authority........... NOT CONNECTED
 Production one-time permit ledger........ NOT CONNECTED
 Production shared certification plane.... NOT IMPLEMENTED
+Reference shared certification adapter... NOT PRODUCTION READY
 ```
 
-## Next exact engineering step
-
-Build the **shared certification-plane contract**:
+## Next exact action
 
 ```text
-provider-neutral shared certification-plane interface
-→ transactional ACTIVE/SUPERSEDED/INVALIDATED certification records
-→ durable PREPARED/ACTIVATED/CLOSED handoff lineage
-→ atomic CAS/fencing semantics for concurrent certifiers
-→ backend-authoritative expiry
-→ bootstrap closure visible across processes
-→ fail-closed adapter certification before production use
-```
-
-Required next test themes:
-
-```text
-cross-process active-certificate visibility
-concurrent activation conflict
-same-evidence idempotency
-higher-epoch supersession
-lower-epoch rollback rejection
-cluster identity conflict
-invalidation visibility
-certificate expiry visibility
-shared handoff closure visibility
-stale certifier fence rejection
-control-plane restart recovery
-reference/local-only adapter cannot claim production readiness
+1. inspect exact-count CI for the 364-test candidate
+2. repair failures without weakening prior guarantees
+3. if 364/364 passes, sync RUNTIME-STATUS.md
+4. sync this CURRENT-STATE.md to the certified run/commit
+5. sync HA-PERSISTENCE-v0.8.md and PR #4
+6. verify final documentation-synchronized branch-head CI
 ```
 
 ## Standing sync rule
