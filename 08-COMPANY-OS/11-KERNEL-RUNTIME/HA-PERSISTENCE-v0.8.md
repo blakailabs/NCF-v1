@@ -18,6 +18,7 @@ backend capability contract
 + trusted external attestation
 + time-bounded certification lifecycle
 + narrow first-certification bootstrap authority
++ bootstrap-to-steady-state certification handoff
 ```
 
 ## Evidence-first rule
@@ -75,33 +76,13 @@ Fault probes require a separate `HAChaosController`. Missing chaos control produ
 
 ## Digest-bound topology + probe evidence
 
-`kernel/ha_evidence_pipeline.py` combines an independently sourced `HATopologySnapshot` with the active probe report.
-
-Topology source provenance includes:
-
-```text
-source_id
-source_class
-source_receipt_digest
-```
-
-Accepted source classes:
-
-```text
-provider_control_plane
-cluster_consensus
-independent_observer
-```
-
-The final evidence nonce is derived from topology, topology-source receipt and probe-report digests. Callers cannot choose a nonce that disconnects certification from observed source material.
+`kernel/ha_evidence_pipeline.py` combines an independently sourced `HATopologySnapshot` with the active probe report. The final evidence nonce is derived from topology, topology-source receipt and probe-report digests; callers cannot choose a nonce that disconnects certification from observed source material.
 
 ## First-certification bootstrap authority
 
-`kernel/ha_bootstrap_authority.py` addresses the circular trust problem: the first shared HA certificate cannot require an already-active shared certificate simply to initialize its own control state.
+`kernel/ha_bootstrap_authority.py` solves first-certification circular trust using a narrow external permit rather than a generic uncertified-backend bypass.
 
-The solution is a narrow external permit—not a generic bypass.
-
-### Permit binding
+Permit binding includes:
 
 ```text
 purpose = initialize_ha_certification_state_v08
@@ -111,82 +92,111 @@ topology_epoch
 evidence_digest
 certification_decision_digest
 attestation_digest
-authority_id
-authority_class
-issued_at
-expires_at
+authority_id / authority_class
+issued_at / expires_at
 permit_nonce
 ```
 
-Accepted reference authority classes:
-
-```text
-external_certification_authority
-independent_release_authority
-```
-
-A production verifier is expected to validate the permit outside the uncertified backend using asymmetric/HSM/mTLS-backed trust or an equivalent independently controlled mechanism.
-
-### Narrow raw backend surface
-
-Before first certification, the coordinator receives only:
-
-```text
-capabilities()
-read()
-put_if_absent()
-```
-
-It does not expose generic CAS, fencing, journal mutation or caller-selected application writes.
-
-The only allowed destination is internally derived:
+The coordinator exposes no caller-selected object key and may initialize only:
 
 ```text
 /_cfhs/ha/certification/bootstrap/<backend-digest>
 ```
 
-### Backend substitution defense
+Before use, it revalidates the target backend's production capability contract. The one-time permit ledger reserves before write and supports idempotent crash recovery after write/before consume.
 
-The coordinator does not accept `backend_id` equality as sufficient proof. Before the bootstrap exception is used, the target backend must still satisfy the full production shared-state capability contract.
+## Bootstrap-to-steady-state handoff
 
-Thus a weaker backend cannot impersonate the certified target simply by reusing the same identifier.
+`kernel/ha_certification_handoff.py` turns the narrow externally authorized bootstrap state into steady-state certification authority without creating an access window between activation and bootstrap closure.
 
-This does not yet replace the need for a stronger production deployment-instance identity/attestation mechanism; it closes the direct capability-downgrade substitution path in the reference boundary.
+### Exact bootstrap verification
 
-### One-time and crash-safe permit semantics
-
-The permit-use ledger reserves the exact permit/binding before the raw backend write.
+The handoff reconstructs `HABootstrapBinding` from the production-ready certification and deployment evidence, derives the canonical bootstrap object key, reads the object, verifies its exact stored digest, and verifies the following fields against the binding/result:
 
 ```text
-verify external permit
-→ reserve one-time permit
-→ derive reserved object key/state
-→ put-if-absent
-→ read-after-write verify exact state
-→ consume permit
+contract/status
+backend_id
+cluster_id
+topology_epoch
+evidence_digest
+certification_decision_digest
+attestation_digest
+binding_digest
+permit_digest
+authority_receipt_digest
 ```
 
-If the process crashes after the backend write but before permit consumption, retry reuses the existing RESERVED permit and exact backend object. It does not issue a second bootstrap write.
+Tampered or mismatched bootstrap state fails closed before activation.
 
-A consumed permit replay is idempotent only for the same permit and exact initialized state. Reusing the same permit ID with changed content is rejected as an idempotency conflict.
+### Shared certification-control object
 
-The SQLite permit ledger is a reference implementation of these semantics only. Production one-time enforcement must live in an independent certification authority/control plane or equivalently strong service.
+The only handoff control destination is deterministic:
 
-## Bootstrap adversarial surface
+```text
+/_cfhs/ha/certification/control/<backend-digest>
+```
 
-Certified attacks include:
+Its value binds:
+
+```text
+backend + cluster + topology
+evidence nonce + evidence digest
+certification decision digest
+attestation digest
+bootstrap object + bootstrap state digest
+permit digest + authority receipt digest
+handoff digest
+```
+
+The object is written with put-if-absent and then read back exactly. Conflicting preexisting state fails closed.
+
+### Handoff lifecycle
+
+The reference lifecycle is:
+
+```text
+PREPARED
+→ control object bound
+→ certificate ACTIVE
+→ ACTIVATED
+→ active certificate expiry rechecked with backend-authoritative time
+→ CLOSED
+```
+
+Retries with the exact same handoff are idempotent. Cluster identity changes, topology rollback, changed bootstrap state, changed control state or changed certification identity are rejected.
+
+A crash can occur after the control write or after certificate activation and retry safely converges to the same state.
+
+### No activation-before-closure access window
+
+An ACTIVE certificate alone is not sufficient during this transition.
+
+`HandoffCertifiedSharedPersistence` requires:
+
+```text
+handoff status == CLOSED
+AND
+normal active certification check passes using backend-authoritative time
+```
+
+Therefore a crash after activation but before closure cannot unlock ordinary shared-state access.
+
+### Permanent first-bootstrap closure
+
+`kernel/ha_handoff_guard.py` wraps the bootstrap entry point. Once the handoff lineage is CLOSED, further first-bootstrap calls—including replay of the original permit—fail with `CFHS_HA_BOOTSTRAP_CLOSED`.
+
+The SQLite handoff ledger remains a reference lifecycle implementation only. Production closure authority must be durable and globally visible in the production shared certification plane or an equivalently strong independent control plane.
+
+## Certified adversarial surfaces
+
+Bootstrap authority attacks:
 
 ```text
 one-time initialization
 consumed-permit replay
 expired permit
-wrong purpose
-wrong backend
-wrong cluster
-wrong topology epoch
-wrong evidence digest
-verifier authority mismatch
-verifier binding mismatch
+wrong purpose/backend/cluster/topology/evidence
+verifier authority/binding mismatch
 same permit ID + altered content
 crash after backend write / before consume
 conflicting preexisting bootstrap state
@@ -194,18 +204,30 @@ non-production-ready certification
 same backend ID + weaker capability contract
 ```
 
-Two pre-certification source findings were repaired rather than weakening tests:
+Steady-state handoff attacks:
 
-1. bootstrap replay/recovery now explicitly distinguishes whether permit state existed before the current attempt;
-2. the target backend capability contract is revalidated at bootstrap time.
+```text
+successful handoff
+idempotent repeated handoff
+crash before shared activation
+crash after shared activation before bootstrap closure
+bootstrap object tampering
+certificate/evidence mismatch
+cluster mismatch
+topology rollback
+second first-bootstrap attempt after closure
+concurrent handoff attempts
+activation expiry during handoff
+steady-state access denied until handoff fully complete
+```
 
 ## Current certification
 
 ```text
-Run ID: 34074237722
-Implementation commit: e0a4acca56a954d64a9f1229d4f1173ff34435c8
-Ran 340 tests in 8.031s
-340 / 340 PASS
+Run ID: 34077423653
+Branch-head commit: 79d9bfc9dd61ccb05f98a61a421dc996d6c13ef8
+Ran 352 tests in 8.030s
+352 / 352 PASS
 0 failures
 0 errors
 0 skipped
@@ -213,6 +235,8 @@ compile_ok = true
 exact_test_count = true
 successful = true
 ```
+
+The handoff validator/code checkpoint was committed at `5fe41db3c519aafe583dd3d858c9d0755a9481c7`; the later synchronized head passed the same exact validator.
 
 Exact surface:
 
@@ -223,11 +247,12 @@ Exact surface:
  14  active conformance probe-harness tests
  11  digest-bound evidence-pipeline tests
  15  bootstrap-authority adversarial tests
+ 12  bootstrap-to-steady-state handoff tests
 ---
-340 targeted tests
+352 targeted tests
 ```
 
-## What 340/340 does NOT certify
+## What 352/352 does NOT certify
 
 ```text
 A real distributed SQL/consensus backend.......... NOT ENABLED
@@ -240,22 +265,22 @@ Production credentials............................. DISABLED
 Production writes.................................. DISABLED
 ```
 
-Reference tests prove contracts, recovery semantics and rejection behavior; they do not upgrade SQLite or a simulated authority to production infrastructure.
+Reference tests prove contracts, recovery semantics and rejection behavior; they do not upgrade SQLite or simulated control-plane components to production infrastructure.
 
-## Next boundary — bootstrap to steady state
+## Next boundary — shared certification plane
 
-The next v0.8 boundary is the handoff from narrowly bootstrapped control state into normal certified shared persistence.
+The next v0.8 boundary is to replace process-local/reference lifecycle authority with a provider-neutral shared certification-plane contract.
 
 Required shape:
 
 ```text
-externally authorized bootstrap object
-→ verify exact bootstrap binding and authority receipt
-→ initialize durable shared certification-control record
-→ activate same evidence-bound certificate
-→ mark bootstrap authority CLOSED/CONSUMED
-→ reject any future first-bootstrap attempt
-→ require normal CertifiedSharedPersistence for subsequent control/runtime state
+shared certification-plane interface
+→ transactional certification ACTIVE/SUPERSEDED/INVALIDATED state
+→ durable PREPARED/ACTIVATED/CLOSED handoff lineage
+→ CAS/fencing for competing certifiers
+→ backend-authoritative expiry
+→ globally visible bootstrap closure
+→ fail-closed adapter certification before any production use
 ```
 
-The handoff must be idempotent, topology-rollback resistant, crash-safe and fail closed if bootstrap state, active certification state or evidence bindings disagree.
+No production backend, credentials or write providers are enabled by this work.
