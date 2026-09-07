@@ -1,177 +1,144 @@
 # Company Operating System Runtime Status
 
-**Updated:** 2026-09-06 19:15 UTC  
-**Engineering branch:** `feature/company-kernel-distributed-safety-v0.7`  
-**Draft PR:** #3 — Company Kernel Distributed / Production Safety v0.7
+**Updated:** 2026-09-07 04:38 UTC  
+**Engineering branch:** `feature/company-kernel-ha-persistence-v0.8`  
+**Draft PR:** #4 — Company Kernel HA Persistence Safety v0.8
 
 ## Project identity
 
 **Project:** Company Operating System  
-**Repository:** `blakailabs/NCF-v1`  
-**Intended repository slug:** `blakailabs/Company-Operating-System`  
+**Repository:** `blakailabs/NCF-v1`
 
 NCF remains the constitutional governance layer inside the broader Company Operating System.
 
-## Canonical v0.7 runtime
+## State-sync discipline
+
+`RUNTIME-STATUS.md` is the canonical detailed resumability checkpoint. `CURRENT-STATE.md` is the concise pickup file. A committed change is never called certified until exact-count CI passes.
+
+## Merged baseline
 
 ```text
-kernel.server_v07
-→ TrustKernelV07RecoverableAnchorFinalGate
-→ TrustKernelV07ProductionIdentityFinalGate
-→ TrustKernelV07ExactAuthorityFinalGate
-→ TrustKernelV07ControlPlaneFinalGate
-→ TrustKernelV07DistributedCompensationFinalGate
-→ TrustKernelV07TransactionalProviderGate
-→ RecoverableSQLiteFencedStateCoordinator
+v0.7 merge/base: 25382c018e8bf3cfe426940afc8f622b526ba191
+v0.7 certification: 264 / 264 PASS
 ```
 
-## Implemented safety layers
+## Evidence-first doctrine
 
 ```text
-Business-object identity................ IMPLEMENTED
-Semantic replay safety.................. IMPLEMENTED
-Monotonic distributed fencing........... IMPLEMENTED
-Provider stale-fence protection......... IMPLEMENTED
-Transactional PREPARE................... IMPLEMENTED
-Forward outcome reconciliation.......... IMPLEMENTED
-Distributed compensation................ IMPLEMENTED
-Compensation reconciliation............. IMPLEMENTED
-Shared persistence contract............. IMPLEMENTED / REFERENCE ONLY
-Fenced approval control plane........... IMPLEMENTED
-Exact financial authority............... IMPLEMENTED
-Production identity/MFA policy.......... IMPLEMENTED / SANDBOX CONFIG
-Authenticated quorum anchor contract..... IMPLEMENTED / REFERENCE CRYPTO
-Same-head anchor recovery................ IMPLEMENTED
-Canonical server anchor wiring.......... IMPLEMENTED
-Canonical v0.7 certification............ 264 / 264 PASS
+Reality first.
+Structure second.
+Automation third.
+AI last.
 ```
 
-## Remote audit-anchor checkpoint
+## v0.8 repository implementation — COMPLETE
 
-The canonical v0.7 server no longer treats one unauthenticated HTTPS endpoint as a hardened remote-anchor path.
-
-Hardened reference mode requires:
+The in-repository reference/runtime trust contract is complete and certified through the production-runtime wiring boundary:
 
 ```text
-2+ HTTPS anchor endpoints
-+ explicit N-of-M quorum
-+ authenticated deterministic request binding
-+ per-endpoint signed receipt verification
-+ durable partial verified receipts
-+ replay-safe reconciliation
-+ same local audit-chain head across outage/retry
-+ runtime-only key environment references
+HA readiness contract
+→ independent topology + behavioral/fault evidence
+→ trusted deployment attestation
+→ bounded certification lifecycle
+→ one-time bootstrap authority
+→ bootstrap-to-steady-state handoff
+→ permanent first-bootstrap closure
+→ shared certification-plane state
+→ adapter/deployment attestation
+→ durable runtime adapter enrollment
+→ per-operation deployment revalidation
+→ independent enrollment authority
+→ exact authority authorization binding
+→ shared production activation receipt
+→ production runtime requires enrollment + authority receipt
 ```
 
-A legacy single endpoint is rejected as hardened mode. Partial configuration fails closed.
+## Final production-runtime safety boundary
 
-The dependency-free HMAC mechanism is intentionally a **reference/test authentication contract only**. It is not asymmetric, mTLS, HSM/KMS-backed, or production-certified trust.
+`kernel/certification_plane_production_runtime.py` closes the direct-registry bypass. A caller can no longer unlock the production runtime merely by writing a valid enrollment through `SharedAdapterEnrollmentRegistry`.
 
-No raw secret values are committed to the repository.
-
-## Production identity / MFA
-
-Checked-in reference configuration remains:
+Production runtime requires two independently meaningful shared states on every guarded operation:
 
 ```text
-security.production_identity.mode = sandbox
+1. current deployment has an ACTIVE, unexpired, exact-digest enrollment
+2. enrollment generation + deployment digest match a shared external-authority activation receipt
 ```
 
-When production mode is explicitly enabled in a controlled deployment, consequential human authority requires:
+The activation receipt is fenced, versioned, journaled, cross-process visible and restart-safe. It binds deployment identity, enrollment generation, authorization digest, authority id/class, key id and authority generation.
+
+Controls include:
 
 ```text
-verified external identity
-+ allowed provider and issuer
-+ required MFA/AMR
-+ allowed ACR when configured
-+ recent auth_time
-+ valid matching kernel session
+direct enrollment bypass rejection
+safe crash gap between enrollment and activation receipt
+idempotent exact activation retry
+activation tamper detection
+direct enrollment rotation makes prior activation stale
+authorized rotation advances both enrollment and activation
+enrollment-generation rollback rejection
+authority-generation rollback rejection
+cross-process activation visibility
+restart recovery
+enrollment revocation overrides an existing activation receipt
 ```
 
-This is enforced for action approvals, S3 release, compensation, and exact-authority elevation approval/use.
-
-No live production IdP is configured by this repository.
-
-## Exact financial authority
-
-Reference standing refund authority:
+## Current certified checkpoint
 
 ```text
-USD $250.00 = 25,000 minor units
-```
-
-Sub-minor precision and non-finite values are rejected. Float-only legacy elevation cannot bypass the exact-unit boundary.
-
-## Shared persistence boundary
-
-The certified persistence contract requires:
-
-```text
-serializable transactions
-compare-and-swap
-monotonic fencing
-durable ordered journal
-multi-connection visibility
-synchronous durability
-authoritative shared time
-distributed quorum
-```
-
-The SQLite implementation validates the semantics but is explicitly **not production-ready** because it lacks distributed quorum and authoritative shared time.
-
-## Certification
-
-Canonical command:
-
-```bash
-cd 08-COMPANY-OS/11-KERNEL-RUNTIME
-PYTHONPATH=. python scripts/validate_v07.py
-```
-
-Final exact-count checkpoint before PR merge:
-
-```text
-Run ID: 34054241130
-Commit: 4c091e7a35894e6c4b7d18c1690401ff1756a77c
-Ran 264 tests in 6.411s
-264 / 264 PASS
+Run ID: 34083804714
+Implementation/validator commit: 37d0daa2ecca984a7b51b1e2b7166b56913178da
+Ran 415 tests in 7.289s
+415 / 415 PASS
 0 failures
 0 errors
 0 skipped
+compile_ok = true
 exact_test_count = true
 successful = true
 ```
 
-The 264-test surface includes all prior v0.5/v0.6/v0.7 regression tests plus production identity/MFA, exact authority, distributed compensation, shared-state conformance, fenced approval control, authenticated quorum anchoring, same-head anchor recovery, and canonical server anchor wiring.
-
-## Production posture
+Incremental surface:
 
 ```text
-Production HA persistence backend....... PENDING
-Production asymmetric/HSM anchor trust.. PENDING
-Live production IdP integration......... NOT ENABLED
-Provider event/webhook reconciliation... PENDING
-Real provider test-mode adapter.......... NOT YET ENABLED
-Network partition/failover drills........ PENDING
-Production credentials.................. DENIED
-Production write providers.............. DISABLED
+403 previously certified tests
+ 12 production runtime wiring tests
+---
+415 targeted tests
 ```
 
-## Release rule
+## Milestone interpretation
 
-No production write-capable provider is enabled until the applicable path has verified identity, authentic policy, exact authority where applicable, business identity, replay binding, exact capacity, current fencing, provider idempotency, strong approvals, externally authenticated audit anchoring, forward reconciliation, governed compensation, and a production shared/HA state backend.
+**Complete:** v0.8 repository contracts, reference implementations, runtime wiring, adversarial tests and exact-count validation.
 
-## Administrative rename
+**Not complete / intentionally external:** deploying and certifying real production infrastructure.
 
-Still pending:
+## External production blockers
 
 ```text
-blakailabs/NCF-v1
-→ blakailabs/Company-Operating-System
+Real production HA backend................ NOT ENABLED
+Real topology control-plane adapter........ NOT ENABLED
+Real chaos/partition environment........... NOT ENABLED
+Production bootstrap authority............. NOT CONNECTED
+Production shared certification plane...... NOT DEPLOYED
+Production adapter attestation authority... NOT CONNECTED
+Production adapter enrollment authority.... NOT CONNECTED
+Production durable trust stores............ NOT CONNECTED
+Live production IdP........................ NOT ENABLED
+Production asymmetric/HSM anchor trust...... PENDING
+Production credentials..................... DENIED
+Production write providers................. DISABLED
+SQLite/reference stores.................... NOT PRODUCTION READY
 ```
 
-See `/ADMIN-RENAME.md`.
+No checked-in switch, test double, reference store or capability claim can convert those blockers into production readiness.
 
-## Next clean PR
+## PR state
 
-After PR #3 is merged, the next engineering PR should start from the merged checkpoint and address the next unresolved production boundary rather than continuing to accumulate unrelated work in PR #3.
+```text
+PR #4............................. OPEN / DRAFT
+Do not merge without explicit user intent.
+```
+
+## Next milestone
+
+After the documentation-synchronized head passes the same exact 415-test gate, start a **new feature branch** for production infrastructure adapters/deployment certification. v0.8 should remain a stable, frozen reference/runtime checkpoint rather than accumulating additional production integration code.

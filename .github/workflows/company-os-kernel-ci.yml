@@ -3,7 +3,7 @@ name: Company OS Kernel CI
 on:
   push:
     branches:
-      - feature/company-kernel-distributed-safety-v0.7
+      - feature/company-kernel-ha-persistence-v0.8
   workflow_dispatch:
 
 jobs:
@@ -17,5 +17,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Validate Distributed Safety v0.7
-        run: PYTHONPATH=. python scripts/validate_v07.py
+      - name: Validate HA Persistence Safety v0.8
+        run: PYTHONPATH=. python scripts/validate_v08.py
