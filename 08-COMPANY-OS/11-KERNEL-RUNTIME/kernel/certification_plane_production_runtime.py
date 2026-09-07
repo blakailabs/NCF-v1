@@ -103,18 +103,13 @@ class SharedProductionEnrollmentActivationRegistry:
 
     def get(self, deployment_id: str) -> ProductionEnrollmentActivationRecord | None:
         obj = self.backend.read(self.object_key(deployment_id))
-        if obj is None:
-            return None
-        return self._record(obj)
+        return self._record(obj) if obj else None
 
     def _fence(self, deployment_id: str, owner_id: str) -> SharedFence:
         if not owner_id:
             raise HardeningError("CFHS_INVALID_REQUEST", "Production activation owner is required")
         return self.backend.acquire_fence(
-            self.fence_key(deployment_id),
-            owner_id,
-            self.fence_ttl_seconds,
-            now=self._now(),
+            self.fence_key(deployment_id), owner_id, self.fence_ttl_seconds, now=self._now()
         )
 
     def record_authorized_activation(
@@ -150,14 +145,10 @@ class SharedProductionEnrollmentActivationRegistry:
             key = self.object_key(enrollment.deployment_id)
             current = self.backend.read(key)
             if current is None:
-                pending = {
-                    "contract": ACTIVATION_CONTRACT,
-                    "deployment_id": enrollment.deployment_id,
-                    "status": "PENDING",
-                }
-                current = self.backend.put_if_absent(key, pending)
-            if current.value == desired:
-                return self._record(current)
+                current = self.backend.put_if_absent(
+                    key,
+                    {"contract": ACTIVATION_CONTRACT, "deployment_id": enrollment.deployment_id, "status": "PENDING"},
+                )
             if current.value.get("contract") != ACTIVATION_CONTRACT or current.value.get("deployment_id") != enrollment.deployment_id:
                 raise HardeningError("CFHS_HA_PRODUCTION_RUNTIME_CONFLICT", "Production activation identity changed")
             if current.value.get("status") == "ACTIVE":
@@ -165,9 +156,18 @@ class SharedProductionEnrollmentActivationRegistry:
                 if enrollment.generation < prior_generation:
                     raise HardeningError("CFHS_AUTHORITY_ROLLBACK", "Production activation enrollment generation cannot move backward")
                 if enrollment.generation == prior_generation:
+                    immutable_match = (
+                        current.value.get("deployment_digest") == enrollment.deployment_digest
+                        and current.value.get("authorization_digest") == authorization.digest()
+                        and current.value.get("authority_id") == authorization.authority_id
+                        and current.value.get("authority_class") == authorization.authority_class
+                        and int(current.value.get("authority_generation", 0)) == authorization.authority_generation
+                        and current.value.get("key_id") == authorization.key_id
+                    )
+                    if immutable_match:
+                        return self._record(current)
                     raise HardeningError("CFHS_HA_PRODUCTION_RUNTIME_CONFLICT", "Production activation generation is already bound to different authority state")
-                prior_authority_generation = int(current.value["authority_generation"])
-                if authorization.authority_generation < prior_authority_generation:
+                if authorization.authority_generation < int(current.value["authority_generation"]):
                     raise HardeningError("CFHS_AUTHORITY_ROLLBACK", "Production activation authority generation cannot move backward")
             stream_key = self.stream_key(enrollment.deployment_id)
             self.backend.fenced_compare_and_swap_with_event(
@@ -211,12 +211,7 @@ class SharedProductionEnrollmentActivationRegistry:
 class ProductionCertificationPlaneRuntime:
     """Runtime facade requiring enrollment AND external-authority activation receipt."""
 
-    def __init__(
-        self,
-        enrolled_runtime: EnrolledCertificationPlaneRuntime,
-        activation_registry: SharedProductionEnrollmentActivationRegistry,
-        deployment_resolver: Callable[[], CertificationPlaneDeploymentIdentity],
-    ):
+    def __init__(self, enrolled_runtime, activation_registry, deployment_resolver):
         self.enrolled_runtime = enrolled_runtime
         self.activation_registry = activation_registry
         self.deployment_resolver = deployment_resolver
@@ -226,37 +221,22 @@ class ProductionCertificationPlaneRuntime:
         enrollment = self.activation_registry.enrollment_registry.require_active(current)
         return self.activation_registry.require_matches(enrollment)
 
-    def current(self):
-        self._guard(); return self.enrolled_runtime.current()
-    def require_active(self):
-        self._guard(); return self.enrolled_runtime.require_active()
-    def acquire_writer_fence(self, owner_id: str):
-        self._guard(); return self.enrolled_runtime.acquire_writer_fence(owner_id)
-    def prepare_handoff(self, **kwargs):
-        self._guard(); return self.enrolled_runtime.prepare_handoff(**kwargs)
-    def activate(self, *args, **kwargs):
-        self._guard(); return self.enrolled_runtime.activate(*args, **kwargs)
-    def close_handoff(self, **kwargs):
-        self._guard(); return self.enrolled_runtime.close_handoff(**kwargs)
-    def invalidate(self, *args, **kwargs):
-        self._guard(); return self.enrolled_runtime.invalidate(*args, **kwargs)
+    def current(self): self._guard(); return self.enrolled_runtime.current()
+    def require_active(self): self._guard(); return self.enrolled_runtime.require_active()
+    def acquire_writer_fence(self, owner_id: str): self._guard(); return self.enrolled_runtime.acquire_writer_fence(owner_id)
+    def prepare_handoff(self, **kwargs): self._guard(); return self.enrolled_runtime.prepare_handoff(**kwargs)
+    def activate(self, *args, **kwargs): self._guard(); return self.enrolled_runtime.activate(*args, **kwargs)
+    def close_handoff(self, **kwargs): self._guard(); return self.enrolled_runtime.close_handoff(**kwargs)
+    def invalidate(self, *args, **kwargs): self._guard(); return self.enrolled_runtime.invalidate(*args, **kwargs)
 
 
 class ProductionCertificationPlaneRuntimeWiring:
-    """One entry point for authority-controlled enrollment and production runtime.
+    """Authority-controlled enrollment plus production runtime contract only.
 
-    This is a contract/wiring layer only. It does not provide a production
-    authority, production trust store, credentials, or a real HA backend.
+    It provides no live authority, production trust store, credentials, or HA backend.
     """
 
-    def __init__(
-        self,
-        enrolled_runtime: EnrolledCertificationPlaneRuntime,
-        enrollment_registry: SharedAdapterEnrollmentRegistry,
-        activation_registry: SharedProductionEnrollmentActivationRegistry,
-        authority_gate: ProductionAdapterEnrollmentAuthorityGate,
-        deployment_resolver: Callable[[], CertificationPlaneDeploymentIdentity],
-    ):
+    def __init__(self, enrolled_runtime, enrollment_registry, activation_registry, authority_gate, deployment_resolver):
         self.enrolled_runtime = enrolled_runtime
         self.enrollment_registry = enrollment_registry
         self.activation_registry = activation_registry
@@ -276,25 +256,14 @@ class ProductionCertificationPlaneRuntimeWiring:
         now: datetime,
     ) -> ProductionCertificationPlaneRuntime:
         enrollment = self.authority_gate.authorize_and_enroll(
-            self.enrollment_registry,
-            readiness,
-            deployment,
-            attestation,
-            authorization,
-            verifier,
-            trust_store,
-            owner_id=owner_id,
-            now=now,
+            self.enrollment_registry, readiness, deployment, attestation,
+            authorization, verifier, trust_store, owner_id=owner_id, now=now,
         )
         self.activation_registry.record_authorized_activation(
-            enrollment,
-            authorization,
-            owner_id=owner_id + ":activation",
+            enrollment, authorization, owner_id=owner_id + ":activation"
         )
         runtime = ProductionCertificationPlaneRuntime(
-            self.enrolled_runtime,
-            self.activation_registry,
-            self.deployment_resolver,
+            self.enrolled_runtime, self.activation_registry, self.deployment_resolver
         )
         runtime._guard()
         return runtime
