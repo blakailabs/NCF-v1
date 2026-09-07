@@ -15,8 +15,8 @@ Milestone: Company Kernel HA Persistence Safety v0.8
 ## Last certified checkpoint
 
 ```text
-CI run: 34077833585
-Certified implementation/validator commit: 287d28850469a082d30a80a3649af363e494cda5
+Final synchronized CI run: 34077965760
+Certified synchronized head: 6300d6174b7dc39d95864eb1cd4ee1a6f9582783
 364 / 364 PASS
 0 failures
 0 errors
@@ -26,10 +26,56 @@ exact_test_count = true
 successful = true
 ```
 
-Shared certification-plane implementation: `65cf3917bb56cb3cf36708ec85b0abb328290cd2`  
-Adversarial tests: `05a8ae1f2d09dbcf314df8391fa73b54d108b535`
+## Current candidate — NOT YET CERTIFIED
 
-## What is certified in v0.8
+```text
+Adapter attestation contract: b979cc9c56134640470a8b9f95a3f0ded91b4cbb
+Durable reference trust ledger: 6dba3782fc631090cadb5a90bcc1ad681edfffd4
+Adversarial tests: 7a34a291501b869781ca8c1fc8008b2a3eb68ace
+376-test validator: 350e608859d3d96f841099ff5248652a68dd6ede
+Expected exact count: 376
+Status: awaiting exact-count CI certification
+```
+
+Candidate adapter readiness requires all of:
+
+```text
+shared backend semantic capability contract
+exact deployment-instance identity
+backend + cluster identity binding
+trusted adapter name + implementation release digest
+backend capability digest binding
+topology evidence digest binding
+probe evidence digest binding
+fresh independent adapter attestation
+verified authority/key/generation binding
+production-ready durable attestation trust store
+nonce replay protection
+authority-generation rollback protection
+```
+
+The included SQLite attestation trust ledger is reference-only and explicitly reports NOT production-ready. A test-only production-ready trust-store double proves the contract path; it is not production infrastructure.
+
+Candidate adversarial tests:
+
+```text
+missing adapter attestation rejected
+stale adapter attestation rejected
+wrong backend identity rejected
+wrong cluster identity rejected
+wrong adapter implementation digest rejected
+tampered capability binding rejected
+attestation replay across deployments rejected
+authority/key rotation requires monotonic generation
+older authority generation rejected
+restart preserves accepted adapter identity/generation
+reference trust store keeps adapter non-production
+production-ready decision requires semantics + external verification + production trust store
+```
+
+**Do not call adapter attestation certified until GitHub Actions confirms 376/376 with 0 failures/errors/skips.**
+
+## Already certified v0.8 stack
 
 ```text
 HA deployment-readiness contract
@@ -37,52 +83,13 @@ active multi-client/fault probe harness
 digest-bound topology + probe evidence assembly
 trusted deployment attestation contract
 time-bounded certification lifecycle
-backend-authoritative expiry checks
-topology rollback protection
-cluster identity continuity
-evidence nonce replay protection
-shared-state access gated by active certification
-narrow external first-certification bootstrap permit
-one-time permit replay protection
-crash-safe bootstrap retry
-bootstrap target capability revalidation
-bootstrap-to-steady-state certification handoff
-digest-bound shared certification-control object
-permanent first-bootstrap closure guard
-closure-aware CertifiedSharedPersistence
-provider-neutral shared certification-plane state machine
-cross-process active-certification visibility
-fenced certification-plane writers
-atomic certification CAS + ordered journal
-shared invalidation visibility
-shared handoff closure visibility
-shared topology supersession/rollback protection
-backend-authoritative shared certificate expiry
-```
-
-## Shared certification-plane adversarial tests
-
-```text
-cross-process active-certificate visibility
-concurrent activation conflict
-same-evidence idempotency
-higher-epoch supersession
-lower-epoch rollback rejection
-cluster identity conflict
-invalidation visibility
-certificate expiry visibility
-shared handoff closure visibility
-stale certifier fence rejection
-control-plane restart recovery
-reference/local-only adapter cannot claim production readiness
-```
-
-## PR state
-
-```text
-Only open PR: #4
-PR #4 state: OPEN / DRAFT
-Keep draft while v0.8 production-boundary work continues.
+bootstrap authority + replay protection
+bootstrap-to-steady-state handoff
+permanent first-bootstrap closure
+closure-aware certified persistence
+shared certification-plane state machine
+cross-process certification/invalidation/closure visibility
+fenced CAS + ordered-journal certification mutations
 ```
 
 ## Production posture
@@ -94,42 +101,20 @@ Real production HA backend............... NOT ENABLED
 Real topology source..................... NOT CONNECTED
 Real chaos controller.................... NOT CONNECTED
 Production bootstrap authority........... NOT CONNECTED
-Production one-time permit ledger........ NOT CONNECTED
 Production shared certification plane.... NOT CONNECTED
-Reference shared certification adapter... NOT PRODUCTION READY
+Production adapter attestation authority. NOT CONNECTED
+Reference adapter trust ledger........... NOT PRODUCTION READY
 ```
 
-## Next exact engineering step
-
-Build the **production certification-plane adapter attestation contract**:
+## Next exact action
 
 ```text
-reference shared-plane semantics
-→ deployment-instance identity
-→ independent adapter attestation
-→ exact backend/cluster binding
-→ capability + topology + probe evidence binding
-→ attestation freshness/expiry
-→ adapter-key / authority rotation semantics
-→ fail closed if adapter or deployment identity changes
-→ still no live production credentials or backend enabled
-```
-
-Required next test themes:
-
-```text
-missing adapter attestation rejected
-stale adapter attestation rejected
-wrong backend identity rejected
-wrong cluster identity rejected
-wrong adapter implementation digest rejected
-tampered capability binding rejected
-attestation replay across deployments rejected
-authority/key rotation with monotonic generation
-older authority generation rejected
-restart preserves accepted adapter identity
-reference adapter remains non-production without external attestation
-production-ready decision requires both shared-plane semantics and verified adapter attestation
+1. inspect exact-count CI for the 376-test candidate
+2. repair failures without weakening trust boundaries
+3. if 376/376 passes, sync RUNTIME-STATUS.md
+4. sync this CURRENT-STATE.md to the certified run/commit
+5. sync HA-PERSISTENCE-v0.8.md and PR #4
+6. verify final documentation-synchronized branch-head CI
 ```
 
 ## Standing sync rule
