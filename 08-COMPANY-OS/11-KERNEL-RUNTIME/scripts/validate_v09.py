@@ -13,8 +13,8 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from validate_v08 import TESTS as V08_TESTS  # noqa: E402
 
 EXPECTED_V08_BASELINE = 415
-EXPECTED_TARGETED_TESTS = 427
-TESTS = list(V08_TESTS) + ["test_production_infrastructure_v09"]
+EXPECTED_TARGETED_TESTS = 441
+TESTS = list(V08_TESTS) + ["test_production_infrastructure_v09", "test_spanner_backend_v091"]
 
 
 def main() -> int:
@@ -46,6 +46,7 @@ def main() -> int:
         "production_credentials_allowed": False,
         "production_write_providers_allowed": False,
         "real_production_infrastructure_connected": False,
+        "spanner_live_integration_enabled": False,
         "v09_controls": [
             "provider-neutral production infrastructure evidence bundle",
             "exact deployment provider adapter backend cluster identity binding",
@@ -59,6 +60,14 @@ def main() -> int:
             "secret-like material rejected from evidence metadata",
             "evidence freshness and expiry enforced",
             "positive authority generation required",
+            "Spanner project instance database dialect deployment identity binding",
+            "Spanner commit-timestamp schema contract",
+            "Spanner emulator permanently excluded from production certification",
+            "Spanner credentials restricted to external secret references",
+            "Spanner live read and write evidence channels disabled by default",
+            "Spanner production evidence cannot be emitted without explicit live channels",
+            "Spanner fenced CAS plus ordered journal required in one read-write transaction",
+            "Spanner provider evidence feeds neutral v0.9 certifier",
             "v0.8 exact 415-test baseline preserved",
         ],
     }
