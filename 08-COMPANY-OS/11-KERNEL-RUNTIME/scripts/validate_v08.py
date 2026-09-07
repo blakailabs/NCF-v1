@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_TARGETED_TESTS = 352
+EXPECTED_TARGETED_TESTS = 364
 TESTS = [
     # frozen v0.5-v0.7 regression surface
     "test_action_safety_v05",
@@ -44,6 +44,7 @@ TESTS = [
     "test_ha_evidence_pipeline_v08",
     "test_ha_bootstrap_authority_v08",
     "test_ha_certification_handoff_v08",
+    "test_shared_certification_plane_v08",
 ]
 
 
@@ -136,6 +137,15 @@ def main() -> int:
             "handoff cluster continuity",
             "concurrent handoff convergence",
             "activation expiry recheck before closure",
+            "provider-neutral shared certification-plane state machine",
+            "shared certification visibility across processes",
+            "shared handoff closure visibility",
+            "fenced certification-plane writers",
+            "atomic certification CAS plus ordered journal",
+            "shared certification invalidation visibility",
+            "shared certification authoritative-time expiry",
+            "shared certification topology supersession and rollback protection",
+            "reference certification-plane adapter cannot self-certify production readiness",
         ],
         "sqlite_reference_production_ready": False,
         "real_ha_backend_enabled": False,
