@@ -23,9 +23,52 @@ Implementation commit: e0a4acca56a954d64a9f1229d4f1173ff34435c8
 0 skipped
 ```
 
-Documentation/state-sync commits may follow the certified implementation commit without changing runtime behavior; always verify the latest branch-head CI before merge.
+A later synchronized 340-test branch head also passed CI run `34074386673`.
 
-## What is certified in v0.8
+## Current candidate — NOT YET CERTIFIED
+
+```text
+Candidate validator commit: 5fe41db3c519aafe583dd3d858c9d0755a9481c7
+Expected exact count: 352
+New test module: test_ha_certification_handoff_v08
+Status: awaiting exact-count CI certification
+```
+
+Candidate implementation adds:
+
+```text
+bootstrap-to-steady-state certification handoff
+digest-bound reserved shared certification-control object
+crash recovery before activation
+crash recovery after activation but before closure
+permanent first-bootstrap closure guard
+closure-aware CertifiedSharedPersistence
+handoff cluster continuity
+topology rollback protection
+concurrent handoff convergence
+activation-expiry recheck before closure
+```
+
+Candidate adversarial tests:
+
+```text
+successful handoff
+idempotent repeated handoff
+crash before shared activation
+crash after shared activation before bootstrap closure
+bootstrap object tampering
+certificate/evidence mismatch
+cluster mismatch
+topology rollback
+second first-bootstrap attempt after closure
+concurrent handoff attempts
+activation expiry during handoff
+steady-state access denied until handoff fully complete
+```
+
+**Do not call the handoff certified until GitHub Actions confirms 352/352 with 0 failures/errors/skips.**
+
+## What is already certified in v0.8
 
 ```text
 HA deployment-readiness contract
@@ -44,34 +87,12 @@ crash-safe bootstrap retry
 bootstrap target capability revalidation
 ```
 
-## Bootstrap adversarial tests
-
-```text
-valid one-time initialization
-consumed permit replay
-expiry
-wrong purpose
-wrong backend
-wrong cluster
-wrong topology epoch
-wrong evidence digest
-authority-verifier identity mismatch
-authority-verifier binding mismatch
-altered-content permit replay
-crash after backend write before consume
-conflicting preexisting bootstrap state
-non-production-ready certification
-same backend_id with weaker backend capabilities
-```
-
 ## PR state
 
 ```text
 Only open PR: #4
 PR #4 state: OPEN / DRAFT
-Review comments: none
-Inline change requests: none
-Requested reviewers awaiting action: none
+Keep draft until candidate CI and status sync are complete.
 ```
 
 ## Production posture
@@ -87,34 +108,15 @@ Production one-time permit ledger........ NOT CONNECTED
 Production shared certification plane.... NOT IMPLEMENTED
 ```
 
-## Next exact engineering step
-
-Build **bootstrap-to-steady-state certification handoff**:
+## Next exact action
 
 ```text
-verify reserved bootstrap object
-→ verify exact evidence/certification/authority binding
-→ create durable shared certification-control record
-→ activate same certificate
-→ permanently close first-bootstrap authority for that backend/cluster lineage
-→ require CertifiedSharedPersistence for subsequent operations
-```
-
-Required tests:
-
-```text
-successful handoff
-idempotent repeated handoff
-crash before shared activation
-crash after shared activation before bootstrap closure
-bootstrap object tampering
-certificate/evidence mismatch
-cluster mismatch
-topology rollback
-second first-bootstrap attempt after closure
-concurrent handoff attempts
-activation expiry during handoff
-steady-state access denied until handoff fully complete
+1. run/inspect exact-count CI for the 352-test candidate
+2. repair any handoff failures without weakening prior guarantees
+3. once 352/352 is green, sync RUNTIME-STATUS.md
+4. sync this CURRENT-STATE.md to the certified run/commit
+5. sync HA-PERSISTENCE-v0.8.md and PR #4
+6. verify final branch-head CI after documentation sync
 ```
 
 ## Standing sync rule
