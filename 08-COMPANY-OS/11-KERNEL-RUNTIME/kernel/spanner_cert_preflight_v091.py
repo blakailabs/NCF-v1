@@ -13,6 +13,7 @@ SPANNER_CERT_PREFLIGHT_CONTRACT = "company-kernel-spanner-cert-preflight/v0.9.1"
 
 @dataclass(frozen=True)
 class SpannerCertificationPreflight:
+    contract: str
     runtime_digest: str
     repository: str
     ref: str
@@ -20,12 +21,12 @@ class SpannerCertificationPreflight:
     live_enabled: bool
     wif_configured: bool
     ready_for_cloud_connection: bool
-    blockers: tuple[str, ...]
+    blockers: tuple[str, ...] | list[str]
     digest: str
 
     def envelope(self) -> dict[str, Any]:
         return {
-            "contract": SPANNER_CERT_PREFLIGHT_CONTRACT,
+            "contract": self.contract,
             "runtime_digest": self.runtime_digest,
             "repository": self.repository,
             "ref": self.ref,
