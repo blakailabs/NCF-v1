@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved implementation draft — pending validation and merge.
+Ratified — v1.0
 
 ## Parent Authority
 
@@ -32,7 +32,7 @@ This standard applies to data extraction, scraping, enrichment, verification, sc
 
 # Article I — Epistemic States
 
-Every material claim or field should be capable of resolving to one of the following states:
+Every material claim or field should be capable of resolving to one of the following canonical epistemic states:
 
 | State | Meaning |
 |---|---|
@@ -55,6 +55,27 @@ OBSERVED != VERIFIED
 ```
 
 A lower-certainty state may be promoted only when the applicable evidence and verification requirements are satisfied.
+
+## Operational and lifecycle qualifiers
+
+`UNVERIFIED`, `LEGACY`, and `CANDIDATE` are not epistemic states. They describe verification or pipeline lifecycle and MUST be represented separately from the canonical `state` field.
+
+| Qualifier | Recommended field | Meaning | Epistemic mapping |
+|---|---|---|---|
+| UNVERIFIED | `verification_status` | Required verification has not succeeded | Claim remains OBSERVED, UNKNOWN, STALE, CONFLICTING, or ERROR as supported; never VERIFIED |
+| LEGACY | `record_status` or `provenance_status` | Record predates required provenance/evidence metadata | Treat unsupported claims as UNKNOWN until refreshed; do not invent provenance |
+| CANDIDATE | `pipeline_status` | Record/opportunity is under discovery or evaluation | Individual claims remain OBSERVED, INFERRED, UNKNOWN, etc.; candidate status is not proof |
+
+A schema SHOULD therefore keep epistemic state and operational state orthogonal, for example:
+
+```json
+{
+  "state": "UNKNOWN",
+  "verification_status": "UNVERIFIED",
+  "pipeline_status": "CANDIDATE",
+  "provenance_status": "LEGACY"
+}
+```
 
 ---
 
@@ -119,12 +140,10 @@ Legacy flat fields MAY remain temporarily for compatibility, but their values mu
 
 Verification must fail closed.
 
-If a verifier is unavailable, missing credentials, times out, returns malformed data, or produces an ambiguous response, the result MUST be one of:
+If a verifier is unavailable, missing credentials, times out, returns malformed data, or produces an ambiguous response:
 
-- UNKNOWN
-- UNVERIFIED
-- ERROR
-- STALE
+- the epistemic `state` MUST remain UNKNOWN, ERROR, STALE, CONFLICTING, or another non-VERIFIED state supported by the evidence; and
+- when verification is required, `verification_status` MUST be `UNVERIFIED` (or an implementation-specific failure code that maps to UNVERIFIED).
 
 It MUST NOT become VERIFIED, CLEAN, ACTIVE, ELIGIBLE, SAFE, or equivalent solely because verification could not run.
 
@@ -157,7 +176,7 @@ Discovery, source resolution, and verification are separate responsibilities.
 ```text
 DISCOVER
   ↓
-CANDIDATE
+pipeline_status = CANDIDATE
   ↓
 SOURCE RESOLUTION
   ↓
@@ -165,12 +184,12 @@ EVIDENCE EXTRACTION
   ↓
 VERIFICATION
   ↓
-VERIFIED / INFERRED / UNKNOWN / CONFLICTING / ERROR
+state = VERIFIED / INFERRED / UNKNOWN / CONFLICTING / ERROR
 ```
 
 A source resolver or "healer" may locate a candidate authoritative page. It does not certify the claims on that page.
 
-Predictive systems may identify probable future opportunities, relationships, or events. Their outputs MUST remain INFERRED or CANDIDATE until evidence supports promotion.
+Predictive systems may identify probable future opportunities, relationships, or events. Their records MUST retain `pipeline_status = CANDIDATE`, while predictive claims MUST remain INFERRED or UNKNOWN until evidence supports promotion.
 
 Historical recurrence is not proof of a current cycle.
 
@@ -189,6 +208,8 @@ CONFIRMED
 FAILED
 UNKNOWN
 ```
+
+These action states belong to action execution records and are separate from the Article I epistemic state of factual claims.
 
 Examples:
 
@@ -234,7 +255,7 @@ A stale previously verified value becomes STALE; it does not remain perpetually 
 
 Existing records without evidence metadata must be treated conservatively.
 
-They MAY retain their legacy value for compatibility, but SHOULD be marked LEGACY or UNVERIFIED until refreshed.
+They MAY retain their legacy value for compatibility, but SHOULD set `provenance_status = LEGACY`. Any claim that lacks sufficient current evidence must use an appropriate non-VERIFIED epistemic state, normally UNKNOWN or STALE, and required verification should remain `verification_status = UNVERIFIED` until refreshed.
 
 NCF systems MUST NOT manufacture source history, timestamps, or verification events for old records.
 
@@ -288,6 +309,7 @@ An NCF-compliant implementation of this standard must demonstrate that:
 5. Agents distinguish attempted from confirmed actions.
 6. Synthetic/demo data cannot silently enter production factual records.
 7. Regression tests protect the no-guess invariant.
+8. Epistemic state is stored separately from verification, provenance, and pipeline lifecycle status.
 
 ---
 
