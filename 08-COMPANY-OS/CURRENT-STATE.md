@@ -11,7 +11,7 @@ Branch: feature/company-kernel-production-infrastructure-v0.9
 PR: #5 — OPEN / DRAFT / NOT MERGED
 Milestone: Company Kernel Production Infrastructure v0.9
 Provider sequence: Spanner → YugabyteDB → identity/authorities/HSM → deployment automation
-Status: ACTIVE — PRE-GCP BOUNDARY
+Status: ACTIVE — PRE-GCP SDK BOUNDARY
 ```
 
 ## Merged certified baseline
@@ -26,9 +26,9 @@ v0.8 final CI: 34083972113
 ## Current certified checkpoint
 
 ```text
-CI run: 34273678953
-Certified implementation/validator head: e96d133f9cdb3311642e415aad9ebe5610bc90b0
-465 / 465 PASS
+CI run: 34274158578
+Certified implementation/validator head: 091d62be9444c8b82eb3f9e73d17a1727107ffa6
+477 / 477 PASS
 0 failures / 0 errors / 0 skipped
 compile_ok = true
 exact_test_count = true
@@ -43,8 +43,9 @@ Exact surface:
  14 Spanner v0.9.1 adapter tests
  12 Spanner S1-S14 orchestrator tests
  12 pre-GCP runtime/evidence tests
+ 12 Spanner SDK boundary/probe-driver tests
 ---
-465 targeted tests
+477 targeted tests
 ```
 
 ## Implemented before GCP exists
@@ -60,6 +61,11 @@ wrong-project/instance/database fail-closed checks
 secret-like runtime identity material rejection
 live channels require explicit enablement + complete keyless identity refs
 digest-bound certification evidence artifact
+provider SDK isolated behind kernel-owned protocol
+S1-S14 mapped to concrete provider SDK operations
+network, mutation, fault and external-authority permissions independently gated
+provider observations cannot self-declare PASS/FAIL/BLOCKED
+provider evidence secret material rejected
 negative evidence preserved; emulator cannot certify production
 ```
 
@@ -89,6 +95,8 @@ YugabyteDB............................. WAITING ON SPANNER LIVE CERT/DISQUALIFIC
 
 ## Next exact engineering step
 
-Continue deployment-agnostic work: implement the concrete Google Cloud Spanner SDK boundary/live transaction driver and map S1-S14 probes to it without enabling credentials or network writes. When the GCP project exists, connect WIF, apply Terraform, verify schema identity, and execute the same probe driver against the real certification database.
+Implement the provider-specific transaction semantics layer behind the SDK boundary: typed strong reads, read-write transaction outcomes, retryable-abort classification, commit timestamp extraction, CAS/fence/journal observation records, and atomic fenced-CAS+journal result validation. Keep it client-injected and network-disabled in repository tests.
+
+When the GCP project exists, connect WIF, apply Terraform, bind the real Google Cloud Spanner client to this boundary, verify schema identity, and execute S1-S14.
 
 Do **not** call Spanner live-certified until observed real-deployment evidence passes all required phases. Do **not** begin YugabyteDB certification until Spanner passes or is explicitly disqualified with preserved negative evidence.
