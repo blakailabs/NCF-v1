@@ -1,6 +1,6 @@
 # Company Operating System — Current State
 
-**Use this file first when resuming engineering.**
+**Use this file first when resuming engineering.**  
 Detailed status: `08-COMPANY-OS/RUNTIME-STATUS.md`
 
 ## Active milestone
@@ -8,10 +8,10 @@ Detailed status: `08-COMPANY-OS/RUNTIME-STATUS.md`
 ```text
 Repository: blakailabs/NCF-v1
 Branch: feature/company-kernel-production-infrastructure-v0.9
-PR: #5 — OPEN / DRAFT
+PR: #5 — OPEN / DRAFT / NOT MERGED
 Milestone: Company Kernel Production Infrastructure v0.9
 Provider sequence: Spanner → YugabyteDB → identity/authorities/HSM → deployment automation
-Status: ACTIVE
+Status: ACTIVE — PRE-GCP BOUNDARY
 ```
 
 ## Merged certified baseline
@@ -23,15 +23,13 @@ v0.8 final CI: 34083972113
 415 / 415 PASS
 ```
 
-## Current certified checkpoint — Spanner contract
+## Current certified checkpoint
 
 ```text
-CI run: 34086008840
-Certified implementation/validator head: e3ee98bca57d2f4c69bbc5c750fecb68e321d55f
-441 / 441 PASS
-0 failures
-0 errors
-0 skipped
+CI run: 34273678953
+Certified implementation/validator head: e96d133f9cdb3311642e415aad9ebe5610bc90b0
+465 / 465 PASS
+0 failures / 0 errors / 0 skipped
 compile_ok = true
 exact_test_count = true
 successful = true
@@ -42,63 +40,55 @@ Exact surface:
 ```text
 415 frozen v0.8 regressions
  12 neutral production-infrastructure tests
- 14 Spanner v0.9.1 contract tests
+ 14 Spanner v0.9.1 adapter tests
+ 12 Spanner S1-S14 orchestrator tests
+ 12 pre-GCP runtime/evidence tests
 ---
-441 targeted tests
+465 targeted tests
 ```
 
-## What is now implemented
+## Implemented before GCP exists
 
 ```text
 provider-neutral production evidence contract
-Spanner deployment identity contract
-Spanner GoogleSQL + PostgreSQL schema plans
-commit-timestamp-backed ordering schema
-single-transaction fenced CAS + journal requirement
-external credential-reference-only rule
-emulator permanently barred from production certification
-live read/write probe channels disabled by default
-Spanner evidence template feeding neutral certifier
+Spanner deployment + schema identity contract
+14-stage live-certification orchestrator
+Terraform certification environment package
+fixed certification naming/target contract
+keyless Workload Identity runtime-reference contract
+wrong-project/instance/database fail-closed checks
+secret-like runtime identity material rejection
+live channels require explicit enablement + complete keyless identity refs
+digest-bound certification evidence artifact
+negative evidence preserved; emulator cannot certify production
 ```
 
-## Critical distinction
+## Fixed certification target
 
-The **Spanner adapter contract is certified against the kernel**. A **live Spanner deployment is not yet certified**, because no real GCP project/instance/database, external credential path, topology evidence, or live fault/probe environment is connected.
+```text
+project: cfhs-kernel-cert
+instance: kernel-ha-cert-01
+database: cfhs-cert
+deployment: company-kernel-cert-spanner-01
+instance config: regional-us-central1
+```
 
 ## Production posture
 
 ```text
 Production credentials................ DENIED
-Spanner live reads.................... DISABLED
-Spanner live writes................... DISABLED
+Production provider writes............ DISABLED
+Real GCP project....................... NOT CONNECTED
 Real Spanner deployment............... NOT CONNECTED
-Spanner topology evidence............. NOT CONNECTED
-Independent Spanner fault control..... NOT CONNECTED
-External Spanner verifier/trust store. NOT CONNECTED
-YugabyteDB adapter.................... WAITING FOR SPANNER LIVE CERTIFICATION
-Production IdP/authorities/HSM........ WAITING
-Deployment automation................. WAITING
+Spanner live integration............... DISABLED
+Workload Identity Federation........... NOT CONNECTED
+Independent fault/topology evidence.... NOT CONNECTED
+External verifier/trust store.......... NOT CONNECTED
+YugabyteDB............................. WAITING ON SPANNER LIVE CERT/DISQUALIFICATION
 ```
 
 ## Next exact engineering step
 
-Connect a real Spanner deployment target and execute the live certification phases defined in `SPANNER-v0.9.1.md`:
+Continue deployment-agnostic work: implement the concrete Google Cloud Spanner SDK boundary/live transaction driver and map S1-S14 probes to it without enabling credentials or network writes. When the GCP project exists, connect WIF, apply Terraform, verify schema identity, and execute the same probe driver against the real certification database.
 
-```text
-project + instance + database identity
-schema verification
-multi-client consistency
-serializability
-CAS
-fencing
-ordered journal
-atomic fenced CAS + journal
-commit timestamp ordering
-durability/restart
-topology evidence
-fault/quorum evidence
-external attestation
-neutral v0.9 certification
-```
-
-Do **not** begin YugabyteDB certification until Spanner has either passed live certification or been explicitly disqualified with preserved negative evidence.
+Do **not** call Spanner live-certified until observed real-deployment evidence passes all required phases. Do **not** begin YugabyteDB certification until Spanner passes or is explicitly disqualified with preserved negative evidence.
