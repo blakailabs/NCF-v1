@@ -13,11 +13,12 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from validate_v08 import TESTS as V08_TESTS  # noqa: E402
 
 EXPECTED_V08_BASELINE = 415
-EXPECTED_TARGETED_TESTS = 453
+EXPECTED_TARGETED_TESTS = 465
 TESTS = list(V08_TESTS) + [
     "test_production_infrastructure_v09",
     "test_spanner_backend_v091",
     "test_spanner_live_certification_v091",
+    "test_spanner_pre_gcp_v091",
 ]
 
 
@@ -66,6 +67,10 @@ def main() -> int:
             "negative phase stops dependent later authority phases",
             "independent live probe driver required",
             "live report digest binds deployment and negative evidence",
+            "fixed pre-GCP certification target identity",
+            "live runtime requires complete keyless workload identity references",
+            "secret-like runtime identity material denied",
+            "certification artifact digest binds ordered phase evidence",
             "v0.8 exact 415-test baseline preserved",
         ],
     }
