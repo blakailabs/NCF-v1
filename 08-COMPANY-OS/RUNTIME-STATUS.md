@@ -30,9 +30,9 @@ AI last.
 ## v0.9 certified implementation checkpoint
 
 ```text
-CI run............................. 34273678953
-implementation/validator head...... e96d133f9cdb3311642e415aad9ebe5610bc90b0
-465 / 465 PASS
+CI run............................. 34279270746
+implementation/validator head...... 00ef54e94b3a0e322401e9a7617a956a72a0a3d8
+521 / 521 PASS
 0 failures
 0 errors
 0 skipped
@@ -41,25 +41,94 @@ exact_test_count = true
 successful = true
 ```
 
-Exact surface:
+A prior exact 521 run (`34279165876`, head `1ad6a955...`) failed with four constructor errors in the new preflight object. That failure was retained as negative engineering evidence, fixed, and replaced only after the exact green run above.
+
+## Exact certified surface
 
 ```text
-415 frozen v0.8 tests
+415 frozen v0.8 regressions
  12 neutral production-infrastructure tests
- 14 Spanner adapter-contract tests
+ 14 Spanner backend-contract tests
  12 Spanner live-orchestrator tests
  12 pre-GCP runtime/evidence tests
+ 12 Spanner SDK-boundary tests
+ 16 transaction-semantics tests
+ 12 injectable client-adapter tests
+ 10 Google Spanner transport-boundary tests
+  6 certification-preflight tests
 ---
-465 targeted tests
+521 targeted tests
 ```
 
-## Spanner v0.9.1 provider contract
+## Pre-GCP engineering — complete
 
-The Spanner layer binds exact project/instance/database/config/dialect identity, GoogleSQL/PostgreSQL schema identity, commit timestamps, strong reads, serializable read-write transactions, CAS, monotonic fencing, ordered journals, and a single transaction for fence assertion + object CAS + journal append. Emulator use is permanently excluded from production certification.
+The repository now contains all architecture that can be responsibly completed without a real Google Cloud control plane or real Spanner database:
 
-## Pre-GCP infrastructure package
+```text
+provider-neutral production evidence contract........ COMPLETE
+Spanner identity/schema contract..................... COMPLETE
+S1-S14 certification orchestrator.................... COMPLETE
+Terraform cert environment........................... COMPLETE
+fixed target/runtime identity controls............... COMPLETE
+keyless WIF runtime-reference controls............... COMPLETE
+certification evidence artifact...................... COMPLETE
+SDK protocol + probe mapping......................... COMPLETE
+transaction semantics................................ COMPLETE
+injectable kernel client adapter..................... COMPLETE
+lazy Google Spanner transport boundary............... COMPLETE
+certification preflight.............................. COMPLETE
+manual WIF Terraform workflow........................ COMPLETE
+```
 
-Terraform is checked in under `11-KERNEL-RUNTIME/deploy/spanner-cert/` for the fixed certification target:
+## Google Spanner transport boundary
+
+`kernel/google_spanner_transport_v091.py` lazily imports `google.cloud.spanner` only when a connection is explicitly requested. It accepts project/instance/database identity but no credential JSON, private key, token, or arbitrary credentials object. Runtime authentication is therefore outside the repository via ADC/WIF.
+
+Controls:
+
+```text
+emulator in certification transport........ DENIED
+unconnected transport access................. DENIED
+unknown write operation...................... DENIED
+strong read observation...................... SUPPORTED
+stale-CAS observation........................ SUPPORTED
+fence transaction boundary................... SUPPORTED / live validation required
+atomic fenced-CAS+journal final evidence...... BLOCKED UNTIL REAL COMMIT RESULT BINDING
+```
+
+The last item is deliberate. The code refuses to synthesize a provider commit result before the actual Spanner transaction API and deployed schema can be observed. This is now a real-cloud boundary, not an unfinished local architecture task.
+
+## GitHub→GCP certification workflow
+
+`.github/workflows/spanner-cert-gcp.yml` is manual-only and supports:
+
+```text
+preflight
+plan
+apply
+```
+
+Security posture:
+
+```text
+contents permission........................ read
+OIDC permission............................ id-token: write
+static service-account JSON................ NOT USED
+GitHub environment......................... cert
+concurrency lock........................... ENABLED
+apply confirmation......................... APPLY-CERT-SPANNER required
+Terraform plan before apply................ REQUIRED
+```
+
+Expected environment/repository variables are external references only:
+
+```text
+GCP_WORKLOAD_IDENTITY_PROVIDER
+CFHS_GCP_EXTERNAL_PRINCIPAL_REFERENCE
+GCP_TERRAFORM_SERVICE_ACCOUNT
+```
+
+## Fixed certification target
 
 ```text
 project: cfhs-kernel-cert
@@ -70,29 +139,6 @@ instance config: regional-us-central1
 environment: cert
 production: false
 ```
-
-The module enables Spanner, creates the certification instance/database and installs `cfhs_shared_objects`, `cfhs_shared_fences`, and `cfhs_shared_journal`. Project creation/billing attachment remains an external administrative prerequisite.
-
-## Keyless runtime boundary
-
-`kernel/spanner_pre_gcp_v091.py` now defines the runtime-reference and evidence-artifact boundary before a GCP account is connected.
-
-Controls:
-
-```text
-fixed cert target identity.................... REQUIRED
-wrong project/instance/database/config........ FAIL CLOSED
-live flag..................................... explicit true/false only
-live mode without WIF references.............. DENIED
-embedded/secret-like identity material........ DENIED
-service-account identity...................... external principal reference only
-live channels................................. DISABLED BY DEFAULT
-runtime digest................................ binds WIF provider + target identity
-certification artifact........................ digest-bound
-production-ready artifact..................... all ordered S1-S14 PASS required
-```
-
-No credential values are stored in the repository. The adapter receives only a runtime credential reference when live mode is explicitly enabled with complete external identity references.
 
 ## Live Spanner certification boundary
 
@@ -115,7 +161,7 @@ S13 external attestation
 S14 neutral v0.9 certification
 ```
 
-PASS requires evidence. FAIL/BLOCKED requires a reason. The first negative phase stops dependent later phases. Negative evidence is preserved in the report/artifact digest.
+PASS requires evidence. FAIL/BLOCKED requires a reason. Negative evidence cannot be promoted or rewritten as success.
 
 ## Production posture
 
@@ -132,15 +178,16 @@ YugabyteDB portability certification.......... WAITING ON SPANNER
 Production IdP/authorities/HSM................ WAITING
 ```
 
-## Current production blockers
+## Remaining blockers are now genuinely external/live
 
-1. `cfhs-kernel-cert` must exist with billing under authorized GCP administration.
-2. GitHub→GCP Workload Identity Federation must be established without static service-account keys.
-3. Terraform must be applied and deployed schema independently verified.
-4. A concrete Google Cloud Spanner SDK/live transaction driver must execute S1-S14 against the real target.
-5. S12 requires independent fault/quorum evidence; absence must remain BLOCKED.
-6. S13/S14 require external attestation/verifier trust, not provider self-assertion.
+1. Create/confirm `cfhs-kernel-cert` and attach billing.
+2. Establish GitHub→GCP Workload Identity Federation without static keys.
+3. Run preflight, then Terraform plan, then explicitly authorized apply.
+4. Verify deployed schema and bind the real SDK transaction commit result/timestamp behavior.
+5. Execute S1-S14 against the real database.
+6. S12 must obtain independent fault/quorum evidence or remain BLOCKED.
+7. S13/S14 require external attestation/verifier trust.
 
 ## Next exact engineering action
 
-While GCP is unavailable, implement the concrete provider SDK boundary and S1-S14 live probe-driver mappings behind the existing disabled runtime gate. Unit/fake-client tests may validate transaction/retry/error mapping, but those results must never be labeled live Spanner certification.
+**No further provider behavior should be fabricated locally.** When GCP is available, begin with the manual certification workflow in `preflight` mode. After live Spanner is certified or explicitly disqualified, begin YugabyteDB portability certification using the same neutral kernel requirements.
