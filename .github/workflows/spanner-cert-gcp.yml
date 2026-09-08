@@ -1,0 +1,89 @@
+name: Company Kernel Spanner Certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "preflight, plan, or apply"
+        required: true
+        default: preflight
+        type: choice
+        options: [preflight, plan, apply]
+      apply_confirmation:
+        description: "For apply only, enter APPLY-CERT-SPANNER"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: company-kernel-spanner-cert
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    environment: cert
+    defaults:
+      run:
+        working-directory: 08-COMPANY-OS/11-KERNEL-RUNTIME
+    env:
+      CFHS_ENVIRONMENT: cert
+      CFHS_SPANNER_PROJECT_ID: cfhs-kernel-cert
+      CFHS_SPANNER_INSTANCE_ID: kernel-ha-cert-01
+      CFHS_SPANNER_DATABASE_ID: cfhs-cert
+      CFHS_SPANNER_DEPLOYMENT_ID: company-kernel-cert-spanner-01
+      CFHS_SPANNER_INSTANCE_CONFIG: regional-us-central1
+      CFHS_SPANNER_LIVE_ENABLED: ${{ inputs.mode == 'preflight' && 'false' || 'true' }}
+      CFHS_GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      CFHS_GCP_SERVICE_ACCOUNT_REFERENCE: ${{ vars.CFHS_GCP_EXTERNAL_PRINCIPAL_REFERENCE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Kernel preflight
+        run: |
+          python - <<'PY'
+          import json, os
+          from kernel.spanner_cert_preflight_v091 import build_preflight
+          p = build_preflight(os.environ)
+          print(json.dumps(p.envelope(), indent=2, sort_keys=True))
+          if os.environ.get('CFHS_SPANNER_LIVE_ENABLED') == 'true' and not p.ready_for_cloud_connection:
+              raise SystemExit('Live plan/apply requested but preflight is blocked')
+          PY
+      - name: Require explicit apply confirmation
+        if: inputs.mode == 'apply'
+        run: |
+          test "${{ inputs.apply_confirmation }}" = "APPLY-CERT-SPANNER" || {
+            echo "Apply confirmation mismatch" >&2
+            exit 1
+          }
+      - id: auth
+        name: Authenticate with Workload Identity Federation
+        if: inputs.mode != 'preflight'
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: cfhs-kernel-cert
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_TERRAFORM_SERVICE_ACCOUNT }}
+      - uses: hashicorp/setup-terraform@v3
+        if: inputs.mode != 'preflight'
+      - name: Terraform init
+        if: inputs.mode != 'preflight'
+        working-directory: 08-COMPANY-OS/11-KERNEL-RUNTIME/deploy/spanner-cert
+        run: terraform init -input=false
+      - name: Terraform validate
+        if: inputs.mode != 'preflight'
+        working-directory: 08-COMPANY-OS/11-KERNEL-RUNTIME/deploy/spanner-cert
+        run: terraform validate
+      - name: Terraform plan
+        if: inputs.mode != 'preflight'
+        working-directory: 08-COMPANY-OS/11-KERNEL-RUNTIME/deploy/spanner-cert
+        run: terraform plan -input=false -out=cfhs-spanner-cert.tfplan
+      - name: Terraform apply
+        if: inputs.mode == 'apply'
+        working-directory: 08-COMPANY-OS/11-KERNEL-RUNTIME/deploy/spanner-cert
+        run: terraform apply -input=false -auto-approve cfhs-spanner-cert.tfplan

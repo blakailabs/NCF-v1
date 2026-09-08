@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/company-kernel-ha-persistence-v0.8
+      - feature/company-kernel-production-infrastructure-v0.9
   workflow_dispatch:
 
 jobs:
@@ -18,4 +19,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Validate HA Persistence Safety v0.8
+        if: github.ref_name == 'feature/company-kernel-ha-persistence-v0.8'
         run: PYTHONPATH=. python scripts/validate_v08.py
+      - name: Validate Production Infrastructure v0.9
+        if: github.ref_name == 'feature/company-kernel-production-infrastructure-v0.9'
+        run: PYTHONPATH=. python scripts/validate_v09.py

@@ -1,93 +1,110 @@
 # Company Operating System — Current State
 
-**Use this file first when resuming engineering.**
+**Use this file first when resuming engineering.**  
 Detailed status: `08-COMPANY-OS/RUNTIME-STATUS.md`
 
 ## Active milestone
 
 ```text
 Repository: blakailabs/NCF-v1
-Branch: feature/company-kernel-ha-persistence-v0.8
-Draft PR: #4
-Milestone: Company Kernel HA Persistence Safety v0.8
-Repository implementation status: COMPLETE
-External production deployment status: PENDING
+Branch: feature/company-kernel-production-infrastructure-v0.9
+PR: #5 — OPEN / DRAFT / NOT MERGED
+Milestone: Company Kernel Production Infrastructure v0.9
+Provider sequence: Spanner → YugabyteDB → identity/authorities/HSM → deployment automation
+Status: PRE-GCP ENGINEERING COMPLETE — WAITING ON REAL GCP
 ```
 
-## Last certified checkpoint
+## Merged certified baseline
 
 ```text
-CI run: 34083804714
-Certified implementation/validator commit: 37d0daa2ecca984a7b51b1e2b7166b56913178da
+v0.8 PR #4: MERGED
+v0.8 merge: eb47c7cfa9ab223f8e60847e651f2387edff0b08
+v0.8 final CI: 34083972113
 415 / 415 PASS
-0 failures
-0 errors
-0 skipped
+```
+
+## Current certified checkpoint
+
+```text
+CI run: 34279527021
+Certified synchronized branch head: 84f45b612848e81e9ff1301ad2626e8aced5771c
+521 / 521 PASS
+0 failures / 0 errors / 0 skipped
 compile_ok = true
 exact_test_count = true
 successful = true
 ```
 
-## Certified v0.8 trust chain
+The synchronized head above includes the implementation plus state/status documentation. A prior 521 run (`34279165876`, head `1ad6a955...`) correctly failed with four preflight-constructor errors; that failed run remains negative evidence and was never promoted.
+
+## Implemented before GCP exists
 
 ```text
-HA deployment readiness + active probes
-digest-bound topology/probe evidence + independent attestation
-time-bounded certification lifecycle
-one-time bootstrap authority
-bootstrap-to-steady-state handoff + permanent bootstrap closure
-shared certification-plane state machine
-adapter/deployment attestation
-runtime adapter enrollment + per-operation deployment revalidation
-independent production enrollment authority
-exact readiness/deployment/attestation/provenance authorization binding
-authority-generation and nonce replay protection
-authority-selected enrollment generation
-shared external-authority activation receipt
-production runtime requires enrollment + matching activation receipt
-direct registry enrollment cannot unlock production runtime
-activation/enrollment rotation and rollback controls
-cross-process/restart-safe activation visibility
-enrollment revocation overrides activation
+provider-neutral production evidence contract
+Spanner deployment + schema identity contract
+14-stage S1-S14 live-certification orchestrator
+Terraform certification environment package
+fixed certification naming/target contract
+keyless Workload Identity runtime-reference contract
+digest-bound certification evidence artifact
+provider SDK protocol and probe-driver mapping
+transaction semantics: strong reads / ABORTED / timestamps / CAS / fencing / journals
+injectable Spanner client transaction adapter
+lazy google-cloud-spanner transport boundary
+ADC/WIF-only authentication boundary; no credential arguments
+emulator denied for live certification
+real atomic commit-result evidence intentionally not synthesized
+certification preflight bound to repo/ref/environment/WIF readiness
+manual GitHub certification workflow: preflight → plan → explicit apply
+apply requires `APPLY-CERT-SPANNER` confirmation
 ```
 
-## v0.8 repository work complete
-
-All planned in-repository HA persistence and runtime trust boundaries for v0.8 are implemented and exact-count certified. There is no remaining reference-semantics task in this milestone.
-
-This does **not** mean production infrastructure is deployed or certified.
-
-## External deployment/integration blockers
+## Fixed certification target
 
 ```text
-Real production HA backend................ NOT ENABLED
-Real topology source....................... NOT CONNECTED
-Real chaos controller...................... NOT CONNECTED
-Production bootstrap authority............. NOT CONNECTED
-Production shared certification plane...... NOT DEPLOYED
-Production adapter attestation authority... NOT CONNECTED
-Production adapter enrollment authority.... NOT CONNECTED
-Production durable trust stores............ NOT CONNECTED
-Production identity/IdP plumbing........... NOT CONNECTED
-Production asymmetric/HSM anchor trust..... PENDING
-Production credentials..................... DENIED
-Production write providers................. DISABLED
-Reference SQLite/local stores.............. NOT PRODUCTION READY
+project: cfhs-kernel-cert
+instance: kernel-ha-cert-01
+database: cfhs-cert
+deployment: company-kernel-cert-spanner-01
+instance config: regional-us-central1
+environment: cert
 ```
 
-These are deployment/infrastructure prerequisites, not unfinished v0.8 reference-contract semantics.
-
-## PR state
+## What is genuinely blocked on GCP now
 
 ```text
-PR #4: OPEN / DRAFT
-Do not merge without explicit user intent.
+Create/confirm GCP project + billing........... EXTERNAL
+Configure GitHub→GCP Workload Identity........ EXTERNAL
+Terraform plan/apply against real project...... EXTERNAL
+Bind/verify real Spanner commit result API..... LIVE ONLY
+Execute observed S1-S14 probes................. LIVE ONLY
+S12 independent fault/quorum evidence.......... LIVE/EXTERNAL
+S13 external release attestation............... EXTERNAL
+S14 neutral production certification........... AFTER S1-S13
 ```
 
-## Next action after final synchronized-head CI
+## Production posture
 
-Once this documentation-sync head passes the same exact 415-test gate, v0.8 can be treated as a stable implementation checkpoint. The next engineering milestone should begin on a new feature branch and focus on real provider-neutral production infrastructure adapters and deployment certification rather than adding more reference bypass layers to v0.8.
+```text
+Production credentials................ DENIED
+Production provider writes............ DISABLED
+Real GCP project....................... NOT CONNECTED
+Real Spanner deployment............... NOT CONNECTED
+Spanner live integration............... DISABLED
+Workload Identity Federation........... NOT CONNECTED
+Independent fault/topology evidence.... NOT CONNECTED
+External verifier/trust store.......... NOT CONNECTED
+YugabyteDB............................. WAITING ON SPANNER LIVE CERT/DISQUALIFICATION
+```
 
-## Standing sync rule
+## Next exact action when GCP is ready
 
-After every meaningful implementation or CI boundary: update `RUNTIME-STATUS.md`, this file, the milestone architecture doc, and the active PR. Never call committed work certified without exact-count CI evidence.
+1. Create/confirm `cfhs-kernel-cert` and attach billing.
+2. Configure WIF variables/identity for `blakailabs/NCF-v1` with no static service-account key.
+3. Run the manual Spanner workflow in **preflight** mode.
+4. Run **plan** and inspect the Terraform plan.
+5. Only after explicit authorization, run **apply** with `APPLY-CERT-SPANNER`.
+6. Verify deployed schema and complete the real commit-result binding.
+7. Execute S1-S14 and preserve PASS/FAIL/BLOCKED evidence exactly.
+
+Do **not** call Spanner live-certified until observed real-deployment evidence passes all required phases. Do **not** begin YugabyteDB certification until Spanner passes or is explicitly disqualified with preserved negative evidence.
