@@ -27,11 +27,11 @@ Automation third.
 AI last.
 ```
 
-## v0.9 certified implementation checkpoint
+## v0.9 certified synchronized checkpoint
 
 ```text
-CI run............................. 34279270746
-implementation/validator head...... 00ef54e94b3a0e322401e9a7617a956a72a0a3d8
+CI run............................. 34279527021
+certified synchronized head........ 84f45b612848e81e9ff1301ad2626e8aced5771c
 521 / 521 PASS
 0 failures
 0 errors
@@ -41,7 +41,7 @@ exact_test_count = true
 successful = true
 ```
 
-A prior exact 521 run (`34279165876`, head `1ad6a955...`) failed with four constructor errors in the new preflight object. That failure was retained as negative engineering evidence, fixed, and replaced only after the exact green run above.
+A prior exact 521 run (`34279165876`, head `1ad6a955...`) failed with four constructor errors in the new preflight object. That failure was retained as negative engineering evidence, fixed, and replaced only after exact green runs. The certified head above includes the implementation and the previous state/status synchronization.
 
 ## Exact certified surface
 
@@ -62,7 +62,7 @@ A prior exact 521 run (`34279165876`, head `1ad6a955...`) failed with four const
 
 ## Pre-GCP engineering — complete
 
-The repository now contains all architecture that can be responsibly completed without a real Google Cloud control plane or real Spanner database:
+The repository contains all architecture that can be responsibly completed without a real Google Cloud control plane or real Spanner database:
 
 ```text
 provider-neutral production evidence contract........ COMPLETE
@@ -82,9 +82,7 @@ manual WIF Terraform workflow........................ COMPLETE
 
 ## Google Spanner transport boundary
 
-`kernel/google_spanner_transport_v091.py` lazily imports `google.cloud.spanner` only when a connection is explicitly requested. It accepts project/instance/database identity but no credential JSON, private key, token, or arbitrary credentials object. Runtime authentication is therefore outside the repository via ADC/WIF.
-
-Controls:
+`kernel/google_spanner_transport_v091.py` lazily imports `google.cloud.spanner` only when a connection is explicitly requested. It accepts project/instance/database identity but no credential JSON, private key, token, or arbitrary credentials object. Runtime authentication remains outside the repository via ADC/WIF.
 
 ```text
 emulator in certification transport........ DENIED
@@ -96,19 +94,11 @@ fence transaction boundary................... SUPPORTED / live validation requir
 atomic fenced-CAS+journal final evidence...... BLOCKED UNTIL REAL COMMIT RESULT BINDING
 ```
 
-The last item is deliberate. The code refuses to synthesize a provider commit result before the actual Spanner transaction API and deployed schema can be observed. This is now a real-cloud boundary, not an unfinished local architecture task.
+The last item is deliberate: final provider commit evidence cannot be synthesized before the actual Spanner transaction API and deployed schema are observed.
 
 ## GitHub→GCP certification workflow
 
-`.github/workflows/spanner-cert-gcp.yml` is manual-only and supports:
-
-```text
-preflight
-plan
-apply
-```
-
-Security posture:
+`.github/workflows/spanner-cert-gcp.yml` is manual-only and supports `preflight`, `plan`, and `apply`.
 
 ```text
 contents permission........................ read
@@ -120,7 +110,7 @@ apply confirmation......................... APPLY-CERT-SPANNER required
 Terraform plan before apply................ REQUIRED
 ```
 
-Expected environment/repository variables are external references only:
+External references only:
 
 ```text
 GCP_WORKLOAD_IDENTITY_PROVIDER
@@ -142,24 +132,7 @@ production: false
 
 ## Live Spanner certification boundary
 
-Observed real-deployment evidence remains required for:
-
-```text
-S1 deployment identity
-S2 schema identity
-S3 multi-client visibility
-S4 serializability/external consistency
-S5 stale CAS rejection
-S6 monotonic fencing/takeover
-S7 ordered journal
-S8 atomic fenced CAS + journal
-S9 commit timestamp ordering
-S10 durability/restart
-S11 topology evidence
-S12 independent fault/quorum evidence or explicit BLOCKED
-S13 external attestation
-S14 neutral v0.9 certification
-```
+Observed real-deployment evidence remains required for S1-S14: deployment identity, schema identity, multi-client visibility, serializability/external consistency, stale CAS rejection, monotonic fencing/takeover, ordered journal, atomic fenced CAS+journal, commit timestamp ordering, durability/restart, topology evidence, independent fault/quorum evidence, external attestation, and neutral v0.9 certification.
 
 PASS requires evidence. FAIL/BLOCKED requires a reason. Negative evidence cannot be promoted or rewritten as success.
 
@@ -178,16 +151,16 @@ YugabyteDB portability certification.......... WAITING ON SPANNER
 Production IdP/authorities/HSM................ WAITING
 ```
 
-## Remaining blockers are now genuinely external/live
+## Remaining blockers are genuinely external/live
 
 1. Create/confirm `cfhs-kernel-cert` and attach billing.
 2. Establish GitHub→GCP Workload Identity Federation without static keys.
-3. Run preflight, then Terraform plan, then explicitly authorized apply.
-4. Verify deployed schema and bind the real SDK transaction commit result/timestamp behavior.
+3. Run preflight, Terraform plan, then explicitly authorized apply.
+4. Verify deployed schema and bind real SDK transaction commit result/timestamp behavior.
 5. Execute S1-S14 against the real database.
 6. S12 must obtain independent fault/quorum evidence or remain BLOCKED.
 7. S13/S14 require external attestation/verifier trust.
 
 ## Next exact engineering action
 
-**No further provider behavior should be fabricated locally.** When GCP is available, begin with the manual certification workflow in `preflight` mode. After live Spanner is certified or explicitly disqualified, begin YugabyteDB portability certification using the same neutral kernel requirements.
+**No further provider behavior should be fabricated locally.** When GCP is available, begin with the manual certification workflow in `preflight` mode. After live Spanner is certified or explicitly disqualified, begin YugabyteDB portability certification against the same neutral kernel requirements.
