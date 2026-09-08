@@ -26,8 +26,8 @@ v0.8 final CI: 34083972113
 ## Current certified checkpoint
 
 ```text
-CI run: 34279270746
-Certified implementation/validator head: 00ef54e94b3a0e322401e9a7617a956a72a0a3d8
+CI run: 34279527021
+Certified synchronized branch head: 84f45b612848e81e9ff1301ad2626e8aced5771c
 521 / 521 PASS
 0 failures / 0 errors / 0 skipped
 compile_ok = true
@@ -35,7 +35,7 @@ exact_test_count = true
 successful = true
 ```
 
-A prior 521 run (`34279165876`, head `1ad6a955...`) correctly failed with four preflight-constructor errors. The defect was fixed at `00ef54e...`; only the later green run is certified.
+The synchronized head above includes the implementation plus state/status documentation. A prior 521 run (`34279165876`, head `1ad6a955...`) correctly failed with four preflight-constructor errors; that failed run remains negative evidence and was never promoted.
 
 ## Implemented before GCP exists
 
