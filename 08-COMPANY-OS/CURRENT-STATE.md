@@ -11,7 +11,7 @@ Branch: feature/company-kernel-production-infrastructure-v0.9
 PR: #5 — OPEN / DRAFT / NOT MERGED
 Milestone: Company Kernel Production Infrastructure v0.9
 Provider sequence: Spanner → YugabyteDB → identity/authorities/HSM → deployment automation
-Status: ACTIVE — PRE-GCP SDK BOUNDARY
+Status: PRE-GCP ENGINEERING COMPLETE — WAITING ON REAL GCP
 ```
 
 ## Merged certified baseline
@@ -26,47 +26,37 @@ v0.8 final CI: 34083972113
 ## Current certified checkpoint
 
 ```text
-CI run: 34274158578
-Certified implementation/validator head: 091d62be9444c8b82eb3f9e73d17a1727107ffa6
-477 / 477 PASS
+CI run: 34279270746
+Certified implementation/validator head: 00ef54e94b3a0e322401e9a7617a956a72a0a3d8
+521 / 521 PASS
 0 failures / 0 errors / 0 skipped
 compile_ok = true
 exact_test_count = true
 successful = true
 ```
 
-Exact surface:
-
-```text
-415 frozen v0.8 regressions
- 12 neutral production-infrastructure tests
- 14 Spanner v0.9.1 adapter tests
- 12 Spanner S1-S14 orchestrator tests
- 12 pre-GCP runtime/evidence tests
- 12 Spanner SDK boundary/probe-driver tests
----
-477 targeted tests
-```
+A prior 521 run (`34279165876`, head `1ad6a955...`) correctly failed with four preflight-constructor errors. The defect was fixed at `00ef54e...`; only the later green run is certified.
 
 ## Implemented before GCP exists
 
 ```text
 provider-neutral production evidence contract
 Spanner deployment + schema identity contract
-14-stage live-certification orchestrator
+14-stage S1-S14 live-certification orchestrator
 Terraform certification environment package
 fixed certification naming/target contract
 keyless Workload Identity runtime-reference contract
-wrong-project/instance/database fail-closed checks
-secret-like runtime identity material rejection
-live channels require explicit enablement + complete keyless identity refs
 digest-bound certification evidence artifact
-provider SDK isolated behind kernel-owned protocol
-S1-S14 mapped to concrete provider SDK operations
-network, mutation, fault and external-authority permissions independently gated
-provider observations cannot self-declare PASS/FAIL/BLOCKED
-provider evidence secret material rejected
-negative evidence preserved; emulator cannot certify production
+provider SDK protocol and probe-driver mapping
+transaction semantics: strong reads / ABORTED / timestamps / CAS / fencing / journals
+injectable Spanner client transaction adapter
+lazy google-cloud-spanner transport boundary
+ADC/WIF-only authentication boundary; no credential arguments
+emulator denied for live certification
+real atomic commit-result evidence intentionally not synthesized
+certification preflight bound to repo/ref/environment/WIF readiness
+manual GitHub certification workflow: preflight → plan → explicit apply
+apply requires `APPLY-CERT-SPANNER` confirmation
 ```
 
 ## Fixed certification target
@@ -77,6 +67,20 @@ instance: kernel-ha-cert-01
 database: cfhs-cert
 deployment: company-kernel-cert-spanner-01
 instance config: regional-us-central1
+environment: cert
+```
+
+## What is genuinely blocked on GCP now
+
+```text
+Create/confirm GCP project + billing........... EXTERNAL
+Configure GitHub→GCP Workload Identity........ EXTERNAL
+Terraform plan/apply against real project...... EXTERNAL
+Bind/verify real Spanner commit result API..... LIVE ONLY
+Execute observed S1-S14 probes................. LIVE ONLY
+S12 independent fault/quorum evidence.......... LIVE/EXTERNAL
+S13 external release attestation............... EXTERNAL
+S14 neutral production certification........... AFTER S1-S13
 ```
 
 ## Production posture
@@ -93,10 +97,14 @@ External verifier/trust store.......... NOT CONNECTED
 YugabyteDB............................. WAITING ON SPANNER LIVE CERT/DISQUALIFICATION
 ```
 
-## Next exact engineering step
+## Next exact action when GCP is ready
 
-Implement the provider-specific transaction semantics layer behind the SDK boundary: typed strong reads, read-write transaction outcomes, retryable-abort classification, commit timestamp extraction, CAS/fence/journal observation records, and atomic fenced-CAS+journal result validation. Keep it client-injected and network-disabled in repository tests.
-
-When the GCP project exists, connect WIF, apply Terraform, bind the real Google Cloud Spanner client to this boundary, verify schema identity, and execute S1-S14.
+1. Create/confirm `cfhs-kernel-cert` and attach billing.
+2. Configure WIF variables/identity for `blakailabs/NCF-v1` with no static service-account key.
+3. Run the manual Spanner workflow in **preflight** mode.
+4. Run **plan** and inspect the Terraform plan.
+5. Only after explicit authorization, run **apply** with `APPLY-CERT-SPANNER`.
+6. Verify deployed schema and complete the real commit-result binding.
+7. Execute S1-S14 and preserve PASS/FAIL/BLOCKED evidence exactly.
 
 Do **not** call Spanner live-certified until observed real-deployment evidence passes all required phases. Do **not** begin YugabyteDB certification until Spanner passes or is explicitly disqualified with preserved negative evidence.
